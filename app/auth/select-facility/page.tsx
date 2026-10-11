@@ -82,6 +82,14 @@ export default function SelectFacilityPage() {
         });
 
         const isSuperAdmin = userProfile.role === 'super_admin';
+        const isCompanyAdmin = userProfile.role === 'company_admin';
+
+        // Güvenlik Kuralı: Standart kullanıcıların tesisi kilitlidir.
+        // Eğer tesis zaten seçilmişse ve kullanıcı yönetici değilse doğrudan dashboard'a yönlendir.
+        if (userProfile.facility_id && !isSuperAdmin && !isCompanyAdmin) {
+          router.push('/dashboard');
+          return;
+        }
 
         // 3. Fetch facilities
         let facilitiesQuery;

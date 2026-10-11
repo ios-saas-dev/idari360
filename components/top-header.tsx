@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, ChevronDown, User, LogOut, Building, Menu } from 'lucide-react';
+import { Search, Bell, ChevronDown, User, LogOut, Building2, Menu } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 interface TopHeaderProps {
@@ -14,6 +14,8 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [userName, setUserName] = useState('Mehmet Yılmaz');
   const [userRole, setUserRole] = useState('İdari İşler Yöneticisi');
+  const [rawRole, setRawRole] = useState<string>('facility_manager');
+  const [facilityName, setFacilityName] = useState<string>('Maslak Genel Merkez');
 
   useEffect(() => {
     async function loadUser() {
@@ -22,7 +24,7 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('full_name, role')
+          .select('full_name, role, facility_id, facilities(name)')
           .eq('id', user.id)
           .single();
 
@@ -30,6 +32,7 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
           setUserName(profile.full_name);
         }
         if (profile?.role) {
+          setRawRole(profile.role);
           const roleLabels: Record<string, string> = {
             super_admin: 'Sistem Süper Admini',
             company_admin: 'Şirket Yöneticisi',
@@ -38,6 +41,11 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
             employee: 'Çalışan',
           };
           setUserRole(roleLabels[profile.role] || 'İdari İşler Yöneticisi');
+        }
+
+        const fac = (profile as any)?.facilities;
+        if (fac?.name) {
+          setFacilityName(fac.name);
         }
       }
     }
@@ -49,6 +57,8 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
     await supabase.auth.signOut();
     router.push('/auth/login');
   };
+
+  const canSwitchFacility = rawRole === 'super_admin' || rawRole === 'company_admin';
 
   return (
     <header className="h-20 bg-white border-b border-slate-200/80 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-40 shadow-sm">
@@ -74,8 +84,16 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
         </div>
       </div>
 
-      {/* Sağ: Bildirim Zili & Profil Bilgisi */}
-      <div className="flex items-center gap-3 sm:gap-6">
+      {/* Sağ: Aktif Kilitli Tesis Rozeti, Bildirim Zili & Profil */}
+      <div className="flex items-center gap-3 sm:gap-5">
+        {/* Aktif Tesis Rozeti (Kullanıcının kilitli tesisi) */}
+        {facilityName && (
+          <div className="hidden md:flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 shadow-2xs">
+            <Building2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+            <span className="truncate max-w-[160px]">{facilityName}</span>
+          </div>
+        )}
+
         {/* Bildirim Zili */}
         <button
           className="relative p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
@@ -109,20 +127,27 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
               <div className="px-4 py-2.5 border-b border-slate-100 sm:hidden">
                 <p className="text-sm font-bold text-slate-900">{userName}</p>
                 <p className="text-xs text-slate-500">{userRole}</p>
+                {facilityName && (
+                  <p className="text-xs text-blue-600 font-medium mt-0.5">{facilityName}</p>
+                )}
               </div>
 
-              <button
-                onClick={() => {
-                  setProfileOpen(false);
-                  router.push('/auth/select-facility');
-                }}
-                className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors"
-              >
-                <Building className="w-4 h-4 text-slate-400" />
-                <span>Tesis / Lokasyon Değiştir</span>
-              </button>
-
-              <div className="border-t border-slate-100 my-1" />
+              {/* Yalnızca Süper Admin ve Şirket Yöneticisi Tesis Değiştirebilir */}
+              {canSwitchFacility && (
+                <>
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false);
+                      router.push('/auth/select-facility');
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors"
+                  >
+                    <Building2 className="w-4 h-4 text-slate-400" />
+                    <span>Tesis / Lokasyon Değiştir</span>
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                </>
+              )}
 
               <button
                 onClick={handleSignOut}
