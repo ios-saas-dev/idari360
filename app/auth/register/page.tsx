@@ -116,6 +116,7 @@ export default function RegisterPage() {
         email: email.trim().toLowerCase(),
         password,
         options: {
+          emailRedirectTo: `${typeof window !== 'undefined' ? window.location.origin : 'https://idari360.vercel.app'}/auth/callback`,
           data: {
             full_name: fullName.trim(),
             phone: phone.trim() || null,

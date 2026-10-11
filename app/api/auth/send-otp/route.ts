@@ -57,6 +57,9 @@ export async function POST(request: Request) {
         await supabaseAdmin.auth.resend({
           type: 'signup',
           email: cleanEmail,
+          options: {
+            emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.vercel.app'}/auth/callback`,
+          },
         });
       } catch (sbErr) {
         // Sessiz hata - Supabase rate limit veya ayar kaynaklı olabilir
