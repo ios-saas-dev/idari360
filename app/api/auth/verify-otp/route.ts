@@ -12,34 +12,80 @@ export async function POST(request: Request) {
       );
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = code.trim();
     const supabaseAdmin = createAdminClient();
 
-    // verify_otp_code stored procedure ile doğrula
+    let verified = false;
+
+    // 1. verify_otp_code stored procedure ile doğrula (SHA-256 hash kontrolü)
     const { data, error } = await supabaseAdmin.rpc('verify_otp_code', {
-      p_email: email.trim().toLowerCase(),
-      p_code: code.trim(),
+      p_email: cleanEmail,
+      p_code: cleanCode,
       p_purpose: purpose,
     });
 
-    if (error) {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: 500 }
-      );
+    if (!error && data?.success) {
+      verified = true;
     }
 
-    if (!data?.success) {
+    // 2. Özel kod eşleşmediyse Supabase Auth native OTP doğrulamayı dene (Yedek kanal)
+    if (!verified && purpose === 'email_verification') {
+      try {
+        const { data: sbData, error: sbErr } = await supabaseAdmin.auth.verifyOtp({
+          email: cleanEmail,
+          token: cleanCode,
+          type: 'signup',
+        });
+
+        if (!sbErr && sbData?.user) {
+          verified = true;
+        }
+      } catch (e) {
+        // İkinci doğrulama hatası
+      }
+    }
+
+    if (!verified) {
       return NextResponse.json(
-        { success: false, message: data?.message || 'Kod doğrulanamadı.' },
+        {
+          success: false,
+          message: data?.message || 'Onay kodu geçersiz veya süresi dolmuş.',
+          remaining_attempts: data?.remaining_attempts,
+        },
         { status: 400 }
       );
     }
 
+    // 3. Kullanıcıyı sistemde 'email_verified = true' olarak onayla
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (profile?.id) {
+      await supabaseAdmin
+        .from('profiles')
+        .update({ email_verified: true, updated_at: new Date().toISOString() })
+        .eq('id', profile.id);
+
+      // Supabase Auth seviyesinde de e-postayı onayla
+      try {
+        await supabaseAdmin.auth.admin.updateUserById(profile.id, {
+          email_confirm: true,
+        });
+      } catch (authErr) {
+        console.warn('[verify-otp] Could not update auth.users email_confirm:', authErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: data.message || 'Onay kodu başarıyla doğrulandı.',
+      message: 'E-posta adresiniz başarıyla doğrulandı.',
     });
   } catch (err: any) {
+    console.error('[verify-otp] Server error:', err);
     return NextResponse.json(
       { success: false, message: err?.message || 'Sunucu hatası oluştu.' },
       { status: 500 }

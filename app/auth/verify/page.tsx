@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { MailCheck, Loader2, AlertCircle, ArrowLeft, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { MailCheck, Loader2, AlertCircle, ArrowLeft, RefreshCw, CheckCircle2, KeyRound } from 'lucide-react';
 import Link from 'next/link';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 function VerifyContent() {
   const router = useRouter();
@@ -16,6 +17,7 @@ function VerifyContent() {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
   const [timer, setTimer] = useState(120);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -23,6 +25,19 @@ function VerifyContent() {
   useEffect(() => {
     if (emailParam) {
       setEmail(emailParam);
+      // Sayfa ilk yüklendiğinde OTP kodunu tetikle
+      fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailParam, purpose: 'email_verification' }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.dev_code) {
+            setDevCode(data.dev_code);
+          }
+        })
+        .catch(() => {});
     }
   }, [emailParam]);
 
@@ -65,8 +80,15 @@ function VerifyContent() {
     }
   };
 
+  const allFilled = digits.every((d) => d !== '');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email) {
+      setError('E-posta adresi bulunamadı. Lütfen kayıt sayfasına dönün.');
+      return;
+    }
+
     const code = digits.join('');
     if (code.length < 6) {
       setError('Lütfen 6 haneli onay kodunun tamamını girin.');
@@ -94,10 +116,18 @@ function VerifyContent() {
         throw new Error(data.message || 'Onay kodu geçersiz veya süresi dolmuş.');
       }
 
-      setSuccessMsg('E-posta adresiniz başarıyla doğrulandı! Yönlendiriliyorsunuz...');
+      setSuccessMsg('E-posta adresiniz başarıyla doğrulandı!');
+
+      const supabase = createBrowserClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+
       setTimeout(() => {
-        router.push('/auth/select-facility');
-      }, 1500);
+        if (sessionData?.session) {
+          router.push('/auth/select-facility');
+        } else {
+          router.push('/auth/login?verified=true&email=' + encodeURIComponent(email));
+        }
+      }, 1200);
     } catch (err: any) {
       setError(err?.message || 'Doğrulama işlemi başarısız oldu.');
     } finally {
@@ -125,6 +155,10 @@ function VerifyContent() {
         throw new Error(data.message || 'Kod tekrar gönderilemedi.');
       }
 
+      if (data.dev_code) {
+        setDevCode(data.dev_code);
+      }
+
       setSuccessMsg('Yeni onay kodu e-posta adresinize gönderildi.');
       setTimer(120);
       setDigits(['', '', '', '', '', '']);
@@ -142,8 +176,6 @@ function VerifyContent() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const allFilled = digits.every((d) => d.length === 1);
-
   return (
     <div className="w-full">
       <div className="text-center mb-8">
@@ -155,6 +187,26 @@ function VerifyContent() {
           <span className="font-semibold text-slate-700">{email || 'E-posta'}</span> adresinize gönderilen 6 haneli onay kodunu girin.
         </p>
       </div>
+
+      {devCode && (
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <span>Test / Geliştirme Onay Kodu: <strong className="font-mono text-sm tracking-widest text-amber-950">{devCode}</strong></span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const split = devCode.split('');
+              setDigits(split);
+              inputRefs.current[5]?.focus();
+            }}
+            className="text-blue-700 underline font-semibold hover:text-blue-900 ml-2"
+          >
+            Otomatik Doldur
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3 animate-shake">

@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
-export default function LoginPage() {
+function LoginFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +16,18 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [verifiedSuccess, setVerifiedSuccess] = useState(false);
+
+  useEffect(() => {
+    const verifiedParam = searchParams.get('verified');
+    const emailParam = searchParams.get('email');
+    if (verifiedParam === 'true') {
+      setVerifiedSuccess(true);
+    }
+    if (emailParam) {
+      setEmail(emailParam);
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -63,20 +76,32 @@ export default function LoginPage() {
     <div className="w-full">
       {/* Başlık Alanı */}
       <div className="mb-8 text-left">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Hoş Geldiniz</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          Hoş Geldiniz
+        </h1>
         <p className="mt-2 text-sm text-slate-500">
           İdari360 hesabınıza giriş yapın
         </p>
       </div>
 
-      {/* Hata Bildirimi */}
+      {/* Doğrulama Başarılı Bildirimi */}
+      {verifiedSuccess && (
+        <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5 text-emerald-600" />
+          <div>
+            <p className="font-semibold">E-posta Adresiniz Doğrulandı!</p>
+            <p className="text-emerald-700 text-xs mt-0.5">Hesabınız aktif edildi. Lütfen şifrenizle giriş yapın.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Hata Mesajı */}
       {error && (
         <div
           role="alert"
-          aria-live="polite"
-          className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 animate-in fade-in duration-200"
+          className="mb-6 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 transition-all animate-shake"
         >
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600" />
+          <AlertCircle className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
           <p className="text-sm font-medium">{error}</p>
         </div>
       )}
@@ -138,9 +163,8 @@ export default function LoginPage() {
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              disabled={loading}
               aria-label={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
+              onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-slate-600 focus:outline-none transition-colors"
             >
               {showPassword ? (
@@ -159,11 +183,11 @@ export default function LoginPage() {
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              disabled={loading}
               className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
             <span className="text-slate-600">Beni Hatırla</span>
           </label>
+
           <Link
             href="/auth/forgot-password"
             className="font-medium text-blue-600 hover:text-blue-700 hover:underline transition-colors"
@@ -172,7 +196,7 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        {/* Giriş Yap Butonu */}
+        {/* Giriş Butonu */}
         <button
           type="submit"
           disabled={loading}
@@ -189,7 +213,7 @@ export default function LoginPage() {
         </button>
       </form>
 
-      {/* Alt Bilgi & Kayıt Bağlantısı */}
+      {/* Kayıt Ol Linki */}
       <div className="mt-8 pt-6 border-t border-slate-100 text-center text-sm text-slate-600">
         Hesabınız yok mu?{' '}
         <Link
@@ -200,5 +224,13 @@ export default function LoginPage() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">Yükleniyor...</div>}>
+      <LoginFormContent />
+    </Suspense>
   );
 }
