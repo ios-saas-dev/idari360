@@ -23,7 +23,6 @@ CREATE OR REPLACE FUNCTION public.role_level(r app_role)
 RETURNS integer
 LANGUAGE sql
 IMMUTABLE
-LEAKPROOF
 AS $$
   SELECT CASE r
     WHEN 'super_admin' THEN 100
@@ -351,41 +350,21 @@ ALTER TABLE IF EXISTS public.otp_codes ENABLE ROW LEVEL SECURITY;
 DO $$
 DECLARE
   t text;
-  tenant_tables text[] := ARRAY[
-    'facilities',
-    'email_domains',
-    'audit_types',
-    'audit_categories',
-    'audit_questions',
-    'audits',
-    'actions',
-    'requests',
-    'service_vehicles',
-    'service_routes',
-    'cafeteria_menus',
-    'cafeteria_suppliers',
-    'cleaning_staff',
-    'cleaning_equipment',
-    'cleaning_schedules',
-    'assets',
-    'suppliers',
-    'scheduled_reminders',
-    'announcements'
-  ];
 BEGIN
-  FOREACH t IN ARRAY tenant_tables LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = t
-    ) THEN
-      EXECUTE format('DROP TRIGGER IF EXISTS trg_enforce_company_isolation ON public.%I;', t);
-      EXECUTE format('
-        CREATE TRIGGER trg_enforce_company_isolation
-        BEFORE INSERT OR UPDATE OF company_id ON public.%I
-        FOR EACH ROW
-        EXECUTE FUNCTION public.enforce_company_isolation();
-      ', t);
-    END IF;
+  FOR t IN (
+    SELECT DISTINCT table_name 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+      AND column_name = 'company_id'
+      AND table_name NOT IN ('companies', 'activity_logs')
+  ) LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS trg_enforce_company_isolation ON public.%I;', t);
+    EXECUTE format('
+      CREATE TRIGGER trg_enforce_company_isolation
+      BEFORE INSERT OR UPDATE OF company_id ON public.%I
+      FOR EACH ROW
+      EXECUTE FUNCTION public.enforce_company_isolation();
+    ', t);
   END LOOP;
 END $$;
 
@@ -643,12 +622,20 @@ CREATE POLICY "audit_categories_company_admin_all"
   FOR ALL
   TO authenticated
   USING (
-    company_id = public.get_user_company_id()
-    AND public.has_role_or_higher('company_admin')
+    EXISTS (
+      SELECT 1 FROM public.audit_types at
+      WHERE at.id = audit_categories.audit_type_id
+        AND at.company_id = public.get_user_company_id()
+        AND public.has_role_or_higher('company_admin')
+    )
   )
   WITH CHECK (
-    company_id = public.get_user_company_id()
-    AND public.has_role_or_higher('company_admin')
+    EXISTS (
+      SELECT 1 FROM public.audit_types at
+      WHERE at.id = audit_categories.audit_type_id
+        AND at.company_id = public.get_user_company_id()
+        AND public.has_role_or_higher('company_admin')
+    )
   );
 
 CREATE POLICY "audit_categories_member_select"
@@ -656,7 +643,11 @@ CREATE POLICY "audit_categories_member_select"
   FOR SELECT
   TO authenticated
   USING (
-    company_id = public.get_user_company_id()
+    EXISTS (
+      SELECT 1 FROM public.audit_types at
+      WHERE at.id = audit_categories.audit_type_id
+        AND at.company_id = public.get_user_company_id()
+    )
   );
 
 -- audit_questions
@@ -676,12 +667,22 @@ CREATE POLICY "audit_questions_company_admin_all"
   FOR ALL
   TO authenticated
   USING (
-    company_id = public.get_user_company_id()
-    AND public.has_role_or_higher('company_admin')
+    EXISTS (
+      SELECT 1 FROM public.audit_categories ac
+      JOIN public.audit_types at ON at.id = ac.audit_type_id
+      WHERE ac.id = audit_questions.category_id
+        AND at.company_id = public.get_user_company_id()
+        AND public.has_role_or_higher('company_admin')
+    )
   )
   WITH CHECK (
-    company_id = public.get_user_company_id()
-    AND public.has_role_or_higher('company_admin')
+    EXISTS (
+      SELECT 1 FROM public.audit_categories ac
+      JOIN public.audit_types at ON at.id = ac.audit_type_id
+      WHERE ac.id = audit_questions.category_id
+        AND at.company_id = public.get_user_company_id()
+        AND public.has_role_or_higher('company_admin')
+    )
   );
 
 CREATE POLICY "audit_questions_member_select"
@@ -689,7 +690,12 @@ CREATE POLICY "audit_questions_member_select"
   FOR SELECT
   TO authenticated
   USING (
-    company_id = public.get_user_company_id()
+    EXISTS (
+      SELECT 1 FROM public.audit_categories ac
+      JOIN public.audit_types at ON at.id = ac.audit_type_id
+      WHERE ac.id = audit_questions.category_id
+        AND at.company_id = public.get_user_company_id()
+    )
   );
 
 
@@ -958,7 +964,7 @@ CREATE POLICY "actions_employee_select"
   USING (
     company_id = public.get_user_company_id()
     AND (
-      assigned_to = auth.uid()
+      responsible_user_id = auth.uid()
       OR created_by = auth.uid()
     )
   );
@@ -1036,7 +1042,7 @@ CREATE POLICY "action_photos_assigned_select"
       WHERE act.id = action_photos.action_id
         AND act.company_id = public.get_user_company_id()
         AND (
-          act.assigned_to = auth.uid()
+          act.responsible_user_id = auth.uid()
           OR act.created_by = auth.uid()
         )
     )
@@ -1109,7 +1115,7 @@ CREATE POLICY "action_history_assigned_select"
       WHERE act.id = action_history.action_id
         AND act.company_id = public.get_user_company_id()
         AND (
-          act.assigned_to = auth.uid()
+          act.responsible_user_id = auth.uid()
           OR act.created_by = auth.uid()
         )
     )
@@ -1416,10 +1422,6 @@ CREATE POLICY "service_routes_member_select"
   TO authenticated
   USING (
     company_id = public.get_user_company_id()
-    AND (
-      public.has_role_or_higher('company_admin')
-      OR facility_id = public.get_user_facility_id()
-    )
   );
 
 
@@ -1964,7 +1966,12 @@ CREATE POLICY "scheduled_reminders_user_select"
   TO authenticated
   USING (
     company_id = public.get_user_company_id()
-    AND user_id = auth.uid()
+    AND (
+      recipients IS NULL
+      OR recipients = '{}'::uuid[]
+      OR auth.uid() = ANY(recipients)
+      OR public.has_role_or_higher('company_admin')
+    )
   );
 
 
@@ -2004,8 +2011,9 @@ CREATE POLICY "announcements_member_select"
   USING (
     company_id = public.get_user_company_id()
     AND (
-      facility_id IS NULL
-      OR facility_id = public.get_user_facility_id()
+      target_facilities IS NULL
+      OR target_facilities = '{}'::uuid[]
+      OR public.get_user_facility_id() = ANY(target_facilities)
       OR public.has_role_or_higher('company_admin')
     )
   );
@@ -2073,7 +2081,7 @@ CREATE INDEX IF NOT EXISTS idx_profiles_company_facility ON public.profiles(comp
 CREATE INDEX IF NOT EXISTS idx_facilities_company ON public.facilities(company_id);
 CREATE INDEX IF NOT EXISTS idx_audits_company_facility ON public.audits(company_id, facility_id);
 CREATE INDEX IF NOT EXISTS idx_actions_company_facility ON public.actions(company_id, facility_id);
-CREATE INDEX IF NOT EXISTS idx_actions_assigned_to ON public.actions(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_actions_responsible_user_id ON public.actions(responsible_user_id);
 CREATE INDEX IF NOT EXISTS idx_requests_company_facility ON public.requests(company_id, facility_id);
 CREATE INDEX IF NOT EXISTS idx_requests_created_by ON public.requests(created_by);
 CREATE INDEX IF NOT EXISTS idx_assets_company_facility ON public.assets(company_id, facility_id);
