@@ -43,9 +43,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Giriş yapmış kullanıcı login veya register sayfasına gitmek isterse
+  // Giriş yapmış kullanıcı login veya register sayfasına gitmek isterse doğrudan dashboard'a yönlendir
   if (isAuthPage && user && (url.pathname === '/auth/login' || url.pathname === '/auth/register')) {
-    url.pathname = '/auth/select-facility';
+    url.pathname = '/dashboard';
     return NextResponse.redirect(url);
   }
 

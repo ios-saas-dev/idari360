@@ -84,9 +84,14 @@ export default function SelectFacilityPage() {
         const isSuperAdmin = userProfile.role === 'super_admin';
         const isCompanyAdmin = userProfile.role === 'company_admin';
 
-        // Güvenlik Kuralı: Standart kullanıcıların tesisi kilitlidir.
-        // Eğer tesis zaten seçilmişse ve kullanıcı yönetici değilse doğrudan dashboard'a yönlendir.
-        if (userProfile.facility_id && !isSuperAdmin && !isCompanyAdmin) {
+        // Süper Admin tüm platformu yönettiği için tesis seçimi yapmaz, doğrudan dashboard'a yönlendirilir
+        if (isSuperAdmin) {
+          router.push('/dashboard');
+          return;
+        }
+
+        // Tesis ataması yapılmış çalışanlar doğrudan dashboard'a yönlendirilir
+        if (userProfile.facility_id && !isCompanyAdmin) {
           router.push('/dashboard');
           return;
         }
@@ -330,18 +335,41 @@ export default function SelectFacilityPage() {
                   <Building2 className="w-8 h-8" />
                 </div>
                 <h3 className="text-lg font-semibold text-slate-800 mb-1">
-                  Henüz atanmış lokasyonunuz bulunmuyor
+                  {profile?.role === 'company_admin' || profile?.role === 'super_admin'
+                    ? 'Henüz sistemde tanımlı tesis bulunmuyor'
+                    : 'Henüz atanmış lokasyonunuz bulunmuyor'}
                 </h3>
                 <p className="text-slate-500 text-sm max-w-sm mx-auto mb-6">
-                  Sisteme erişebilmek için lütfen yöneticinizle iletişime geçin.
+                  {profile?.role === 'company_admin' || profile?.role === 'super_admin'
+                    ? 'Yönetici paneline giderek şirket ve tesis tanımlayabilir veya doğrudan kontrol paneline geçebilirsiniz.'
+                    : 'Sisteme erişebilmek için lütfen şirket yöneticinizle iletişime geçin.'}
                 </p>
-                <button
-                  onClick={handleLogout}
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Farklı bir hesapla giriş yap
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+                  {profile?.role === 'company_admin' || profile?.role === 'super_admin' ? (
+                    <>
+                      <button
+                        onClick={() => router.push('/dashboard/admin')}
+                        className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                      >
+                        Yönetici Paneline Git
+                      </button>
+                      <button
+                        onClick={() => router.push('/dashboard')}
+                        className="w-full sm:w-auto px-5 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        Dashboard&apos;a Geç
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleLogout}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Farklı bir hesapla giriş yap
+                    </button>
+                  )}
+                </div>
               </div>
             ) : filteredFacilities.length === 0 ? (
               /* Empty state: Search filter returned no results */

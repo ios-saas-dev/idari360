@@ -46,6 +46,12 @@ export function TopHeader({ onMenuClick }: TopHeaderProps) {
         const fac = (profile as any)?.facilities;
         if (fac?.name) {
           setFacilityName(fac.name);
+        } else if (profile?.role === 'super_admin') {
+          setFacilityName('Tüm Sistem (Genel Yönetim)');
+        } else if (profile?.role === 'company_admin') {
+          setFacilityName('Şirket Genel Yönetimi');
+        } else {
+          setFacilityName('');
         }
       }
     }

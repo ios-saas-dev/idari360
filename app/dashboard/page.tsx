@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Calendar,
@@ -22,13 +22,54 @@ import {
   BarChart3,
   Settings,
   ArrowRight,
+  ShieldCheck,
 } from 'lucide-react';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 export default function DashboardPage() {
-  const [userName] = useState('Mehmet Yılmaz');
+  const [userName, setUserName] = useState('Yönetici');
+  const [userRole, setUserRole] = useState<string>('');
 
-  // Hızlı işlemler listesi (Referans görseldeki gibi)
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const supabase = createBrowserClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, email, role')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profile?.full_name) {
+            setUserName(profile.full_name);
+          } else if (profile?.email) {
+            setUserName(profile.email.split('@')[0]);
+          }
+
+          if (profile?.role) {
+            setUserRole(profile.role);
+          }
+        }
+      } catch (err) {
+        console.error('Kullanıcı bilgisi yüklenemedi:', err);
+      }
+    }
+    loadUser();
+  }, []);
+
+  // Hızlı işlemler listesi (Rol durumuna göre dinamik)
+  const isSuperAdmin = userRole === 'super_admin';
+  const isCompanyAdmin = userRole === 'company_admin';
+
   const quickActions = [
+    ...(isSuperAdmin || isCompanyAdmin ? [{
+      title: isSuperAdmin ? 'Platform Yönetimi' : 'Şirket & Tesis Yönetimi',
+      href: '/dashboard/admin',
+      icon: ShieldCheck,
+      color: 'bg-purple-600 text-white',
+    }] : []),
     { title: 'Yeni Talep Oluştur', href: '/dashboard/requests/new', icon: Plus, color: 'bg-blue-500 text-white' },
     { title: 'Servis Denetim Formu', href: '/dashboard/shuttle/audit', icon: Bus, color: 'bg-blue-100 text-blue-600' },
     { title: 'Yemekhane Denetim Formu', href: '/dashboard/cafeteria/audit', icon: UtensilsCrossed, color: 'bg-green-100 text-green-600' },

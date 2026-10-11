@@ -60,7 +60,23 @@ function LoginFormContent() {
       }
 
       if (data.user) {
-        router.push('/auth/select-facility');
+        // Kullanıcı rolünü ve tesis durumunu kontrol et
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, facility_id')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        if (profile?.role === 'super_admin' || profile?.role === 'company_admin') {
+          // Süper Admin ve Şirket Yöneticisi doğrudan ana yönetim paneline gider
+          router.push('/dashboard');
+        } else if (profile?.facility_id) {
+          // Tesisi atanmış kullanıcı doğrudan dashboard'a gider
+          router.push('/dashboard');
+        } else {
+          // Tesis seçmesi gereken personel lokasyon seçimine gider
+          router.push('/auth/select-facility');
+        }
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
