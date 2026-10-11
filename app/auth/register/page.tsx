@@ -131,7 +131,16 @@ export default function RegisterPage() {
       }
 
       if (data.user) {
-        // OTP kodu oluşturmak için backend API'yi tetikle
+        // Kullanıcı zaten kayıtlı mı kontrolü (Supabase güvenliği gereği hata yerine boş identities döner)
+        if (data.user.identities && data.user.identities.length === 0) {
+          setError('Bu e-posta adresi ile zaten kayıtlı bir hesap bulunmaktadır. Giriş sayfasına yönlendiriliyorsunuz...');
+          setTimeout(() => {
+            router.push(`/auth/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+          }, 1800);
+          return;
+        }
+
+        // Yeni kullanıcı için OTP kodu oluşturmak üzere backend API'yi tetikle
         await fetch('/api/auth/send-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
