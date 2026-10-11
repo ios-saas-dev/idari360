@@ -184,36 +184,41 @@ export default function DashboardPage() {
       {/* 3. ORTA BÖLÜM: DONUT GRAFİK, TREND VE HIZLI İŞLEMLER */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Kolon 1: Taleplerin Durumuna Göre Dağılımı (4 Kolon) */}
-        <div className="lg:col-span-4 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-800">Taleplerin Durumuna Göre Dağılımı</h2>
+        <div className="lg:col-span-4 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-bold text-slate-800">Taleplerin Durumuna Göre Dağılımı</h2>
+            <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+              32 Talep
+            </span>
+          </div>
 
-          <div className="mt-6 flex flex-col sm:flex-row items-center gap-6">
+          <div className="my-auto py-2 flex flex-row items-center gap-3 sm:gap-4">
             {/* SVG Donut Grafiği */}
-            <div className="relative w-40 h-40 flex items-center justify-center flex-shrink-0">
+            <div className="relative w-32 h-32 sm:w-36 sm:h-36 flex-shrink-0 flex items-center justify-center">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#2563eb" strokeWidth="16" strokeDasharray="89.5 238.7" strokeDashoffset="0" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#06b6d4" strokeWidth="16" strokeDasharray="59.7 238.7" strokeDashoffset="-89.5" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f59e0b" strokeWidth="16" strokeDasharray="44.8 238.7" strokeDashoffset="-149.2" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#8b5cf6" strokeWidth="16" strokeDasharray="22.4 238.7" strokeDashoffset="-194" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#10b981" strokeWidth="16" strokeDasharray="22.4 238.7" strokeDashoffset="-216.4" />
+                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#2563eb" strokeWidth="14" strokeDasharray="89.5 238.7" strokeDashoffset="0" />
+                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#06b6d4" strokeWidth="14" strokeDasharray="59.7 238.7" strokeDashoffset="-89.5" />
+                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f59e0b" strokeWidth="14" strokeDasharray="44.8 238.7" strokeDashoffset="-149.2" />
+                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#8b5cf6" strokeWidth="14" strokeDasharray="22.4 238.7" strokeDashoffset="-194" />
+                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#10b981" strokeWidth="14" strokeDasharray="22.4 238.7" strokeDashoffset="-216.4" />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-[11px] font-medium text-slate-400">Toplam</span>
-                <span className="text-2xl font-black text-slate-900 leading-none">32</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Toplam</span>
+                <span className="text-xl sm:text-2xl font-black text-slate-900 leading-none mt-0.5">32</span>
               </div>
             </div>
 
-            {/* Lejant Listesi */}
-            <div className="space-y-2 w-full text-xs">
+            {/* Lejant Listesi (Temiz, taşmayan ve tam sığan düzen) */}
+            <div className="space-y-2 flex-1 min-w-0 text-xs">
               {donutData.map((d, idx) => (
-                <div key={idx} className="flex items-center justify-between text-slate-600">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
-                    <span className="font-medium text-slate-700">{d.label}</span>
+                <div key={idx} className="flex items-center justify-between gap-1 text-slate-600">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                    <span className="font-semibold text-slate-700 truncate">{d.label}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-shrink-0 font-medium">
                     <span className="font-bold text-slate-900">{d.count}</span>
-                    <span className="text-slate-400 w-9 text-right">%{d.pct}</span>
+                    <span className="text-slate-400 text-[11px] min-w-[34px] text-right">%{d.pct}</span>
                   </div>
                 </div>
               ))}
@@ -221,67 +226,70 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Kolon 2: Aylık Talep Trendi (4 Kolon) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-800">Aylık Talep Trendi</h2>
+        {/* Kolon 2: Aylık Talep Trendi (5 Kolon) */}
+        <div className="lg:col-span-5 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-1">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">Aylık Talep Trendi</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Son 6 aylık talep yoğunluğu</p>
+            </div>
+            <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>+%18.4</span>
+            </div>
           </div>
 
-          <div className="relative mt-4 h-48 w-full">
-            {/* SVG Çizgi Grafiği */}
-            <svg className="w-full h-full overflow-visible" viewBox="0 0 500 180" preserveAspectRatio="none">
-              {/* Yatay Kılavuz Çizgileri */}
-              <line x1="40" y1="20" x2="480" y2="20" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="40" y1="60" x2="480" y2="60" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="40" y1="100" x2="480" y2="100" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="40" y1="140" x2="480" y2="140" stroke="#f1f5f9" strokeWidth="1" />
+          <div className="flex-1 flex flex-col justify-end w-full relative mt-3 min-h-[190px]">
+            {/* Grid Çizgileri ve Y Ekseni */}
+            <div className="relative flex-1 w-full flex flex-col justify-between pb-6">
+              {[80, 60, 40, 20, 0].map((val, idx) => (
+                <div key={idx} className="flex items-center w-full">
+                  <span className="w-6 text-[10px] font-bold text-slate-400 flex-shrink-0 text-left">{val}</span>
+                  <div className="flex-1 border-b border-slate-100 ml-1" />
+                </div>
+              ))}
 
-              {/* Gradyan Alan */}
-              <defs>
-                <linearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#2563eb" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
+              {/* SVG Eğrisi (Kılavuz çizgileriyle tam uyumlu) */}
+              <div className="absolute inset-0 pl-7 pb-6 pointer-events-none">
+                <svg className="w-full h-full overflow-visible" viewBox="0 0 500 160" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity="0.0" />
+                    </linearGradient>
+                  </defs>
 
-              <path
-                d="M 50 140 Q 120 120, 150 90 T 230 85 T 320 100 T 400 45 T 470 50 L 470 160 L 50 160 Z"
-                fill="url(#trendGradient)"
-              />
-              <path
-                d="M 50 140 Q 120 120, 150 90 T 230 85 T 320 100 T 400 45 T 470 50"
-                fill="none"
-                stroke="#2563eb"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-              />
+                  <path
+                    d="M 20 140 C 70 125, 110 85, 150 75 C 190 65, 230 95, 270 90 C 310 85, 350 45, 395 30 C 420 22, 450 35, 470 45 L 470 160 L 20 160 Z"
+                    fill="url(#trendGradient)"
+                  />
+                  <path
+                    d="M 20 140 C 70 125, 110 85, 150 75 C 190 65, 230 95, 270 90 C 310 85, 350 45, 395 30 C 420 22, 450 35, 470 45"
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                  />
 
-              {/* Mayıs Vurgu Noktası */}
-              <circle cx="400" cy="45" r="5" fill="#2563eb" stroke="#ffffff" strokeWidth="2.5" />
-            </svg>
+                  {/* Mayıs Zirve Noktası */}
+                  <circle cx="395" cy="30" r="5" fill="#2563eb" stroke="#ffffff" strokeWidth="2.5" />
+                </svg>
 
-            {/* Mayıs 56 Talep Etiketi */}
-            <div className="absolute top-2 right-16 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-center shadow-md">
-              <span className="text-[10px] text-slate-400 block font-medium">Mayıs</span>
-              <span className="text-xs font-extrabold text-blue-600">56 Talep</span>
-            </div>
-
-            {/* Y Ekseni Etiketleri */}
-            <div className="absolute left-0 inset-y-0 flex flex-col justify-between text-[11px] font-semibold text-slate-400 py-1">
-              <span>80</span>
-              <span>60</span>
-              <span>40</span>
-              <span>20</span>
-              <span>0</span>
+                {/* Mayıs 56 Talep Etiketi (Zirve noktasının hemen üstünde) */}
+                <div className="absolute top-0 right-[14%] -translate-x-1/2 bg-white border border-blue-200 rounded-xl px-2.5 py-1 text-center shadow-lg shadow-blue-500/10 pointer-events-auto">
+                  <span className="text-[10px] text-slate-400 block font-semibold leading-none">Mayıs</span>
+                  <span className="text-xs font-black text-blue-600 leading-tight">56 Talep</span>
+                </div>
+              </div>
             </div>
 
             {/* X Ekseni Ayları */}
-            <div className="absolute bottom-0 inset-x-0 pl-10 pr-2 flex justify-between text-[11px] font-medium text-slate-400">
+            <div className="flex justify-between pl-7 pr-3 pt-1 border-t border-slate-100 text-[11px] font-semibold text-slate-400">
               <span>Oca</span>
               <span>Şub</span>
               <span>Mar</span>
               <span>Nis</span>
-              <span className="font-bold text-blue-600">May</span>
+              <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded">May</span>
               <span>Haz</span>
             </div>
           </div>
