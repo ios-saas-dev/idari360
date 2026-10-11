@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -18,7 +18,9 @@ import {
   Warehouse,
   Truck,
   Box,
+  ShieldCheck,
 } from 'lucide-react';
+import { createBrowserClient } from '@/lib/supabase/client';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -27,7 +29,33 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const [userRole, setUserRole] = useState<string | null>(null);
 
+  useEffect(() => {
+    async function fetchUserRole() {
+      try {
+        const supabase = createBrowserClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+
+          if (profile?.role) {
+            setUserRole(profile.role);
+          }
+        }
+      } catch (err) {
+        console.error('Sidebar rol yükleme hatası:', err);
+      }
+    }
+
+    fetchUserRole();
+  }, []);
+
+  // Standart menü öğeleri
   const navItems = [
     { name: 'Ana Sayfa', href: '/dashboard', icon: Home, badge: null },
     { name: 'Talepler', href: '/dashboard/requests', icon: ClipboardList, badge: '12' },
@@ -41,6 +69,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     { name: 'Duyurular', href: '/dashboard/announcements', icon: Megaphone, badge: null },
     { name: 'Ayarlar', href: '/dashboard/settings', icon: Settings, badge: null },
   ];
+
+  // Yönetici Paneli Görünürlük Kuralı: Sadece yetkisi olan rollerde görünsün
+  const isAdminAuthorized =
+    userRole === 'super_admin' || userRole === 'company_admin' || userRole === 'facility_manager';
 
   return (
     <aside
@@ -64,7 +96,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </div>
 
         {/* Navigasyon Listesi */}
-        <nav className="p-4 space-y-1 overflow-y-auto max-h-[calc(100vh-280px)]">
+        <nav className="p-4 space-y-1 overflow-y-auto max-h-[calc(100vh-320px)]">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -87,9 +119,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 {item.badge && (
                   <span
                     className={`px-2 py-0.5 text-xs font-bold rounded-full ${
-                      isActive
-                        ? 'bg-white text-blue-600'
-                        : 'bg-blue-600/80 text-white'
+                      isActive ? 'bg-white text-blue-600' : 'bg-blue-600/80 text-white'
                     }`}
                   >
                     {item.badge}
@@ -98,6 +128,39 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               </Link>
             );
           })}
+
+          {/* SOL MENÜDE EN ALTTA: YÖNETİCİ PANELİ (SADECE YETKİLİ ROLLERDE GÖRÜNÜR) */}
+          {isAdminAuthorized && (
+            <div className="pt-2 mt-2 border-t border-white/10">
+              <Link
+                href="/dashboard/admin"
+                onClick={onClose}
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  pathname.startsWith('/dashboard/admin')
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30 font-semibold'
+                    : 'text-amber-300 hover:text-white hover:bg-white/10 border border-amber-400/20'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <ShieldCheck
+                    className={`w-4 h-4 ${
+                      pathname.startsWith('/dashboard/admin') ? 'text-white' : 'text-amber-400'
+                    }`}
+                  />
+                  <span>Yönetici Paneli</span>
+                </div>
+                <span
+                  className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md tracking-wider ${
+                    pathname.startsWith('/dashboard/admin')
+                      ? 'bg-white/20 text-white'
+                      : 'bg-amber-400/20 text-amber-300'
+                  }`}
+                >
+                  {userRole === 'super_admin' ? 'Süper' : 'Yönetim'}
+                </span>
+              </Link>
+            </div>
+          )}
         </nav>
       </div>
 
@@ -109,12 +172,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <Box className="w-4 h-4 text-amber-400 -mb-1" />
             <Truck className="w-6 h-6 text-white -mb-0.5" />
           </div>
-          <p className="text-xs font-semibold text-slate-200 leading-tight">
-            İdari İşler Yönetim
-          </p>
-          <p className="text-[11px] text-cyan-400/90 font-medium">
-            Süreç Platformu
-          </p>
+          <p className="text-xs font-semibold text-slate-200 leading-tight">İdari İşler Yönetim</p>
+          <p className="text-[11px] text-cyan-400/90 font-medium">Süreç Platformu</p>
         </div>
       </div>
     </aside>
