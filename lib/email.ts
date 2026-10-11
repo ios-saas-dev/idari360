@@ -91,6 +91,15 @@ export async function sendOtpEmail({ to, code, purpose = 'email_verification' }:
       return { success: true, provider: 'resend', message: 'E-posta Resend ile iletildi.' };
     } catch (err: any) {
       console.error('[Email Service: Resend Error]', err);
+      // SMTP yoksa doğrudan Resend hata mesajını dön
+      if (!process.env.SMTP_HOST) {
+        return {
+          success: false,
+          provider: 'resend',
+          error: err?.message,
+          message: err?.message || 'Resend üzerinden e-posta gönderilemedi.',
+        };
+      }
     }
   }
 

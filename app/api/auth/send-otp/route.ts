@@ -66,16 +66,18 @@ export async function POST(request: Request) {
 
     console.log(`[İdari360 OTP Service] E-posta: ${cleanEmail} -> Gönderim: ${emailResult.provider} (Başarı: ${emailResult.success})`);
 
-    // Geliştirme / Test kolaylığı için: SMTP yapılandırılmamışsa bildirimde dev_code desteği
+    // Geliştirme / Test kolaylığı için: SMTP yapılandırılmamışsa veya test aşamasındaysa dev_code desteği
     const isDevOrTest = process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_OTP === 'true';
 
     return NextResponse.json({
-      success: true,
-      message: 'Onay kodu e-posta adresinize gönderildi.',
+      success: emailResult.success,
+      message: emailResult.success
+        ? 'Onay kodu e-posta adresinize gönderildi.'
+        : (emailResult.message || emailResult.error || 'E-posta gönderilemedi.'),
       provider: emailResult.provider,
       expires_at: data.expires_at,
       ...(isDevOrTest && !emailResult.success ? { dev_code: rawCode } : {}),
-    });
+    }, { status: emailResult.success ? 200 : (emailResult.provider === 'none' ? 200 : 400) });
   } catch (err: any) {
     console.error('[send-otp] Server error:', err);
     return NextResponse.json(
