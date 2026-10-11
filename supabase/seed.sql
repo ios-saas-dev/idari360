@@ -1,0 +1,3 @@
+-- İdari360 - Seed Data
+-- Bu dosya veritabanı için başlangıç verilerini içerecektir.
+-- Migration dosyaları oluşturulduktan sonra seed verileri eklenecektir.
