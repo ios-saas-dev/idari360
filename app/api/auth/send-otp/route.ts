@@ -51,18 +51,16 @@ export async function POST(request: Request) {
       purpose,
     });
 
-    // 3. Supabase Auth native e-posta tetikleme (Yedek kanal)
-    if (purpose === 'email_verification') {
+    // 3. Supabase Auth native yedek kanal: Yalnızca e-posta servisi (Resend/SMTP) tanımlı DEĞİLSE
+    // ve kesinlikle sihirli link olmadan yönlendirme
+    if (!emailResult.success && purpose === 'email_verification') {
       try {
         await supabaseAdmin.auth.resend({
           type: 'signup',
           email: cleanEmail,
-          options: {
-            emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.vercel.app'}/auth/callback`,
-          },
         });
       } catch (sbErr) {
-        // Sessiz hata - Supabase rate limit veya ayar kaynaklı olabilir
+        // Sessiz hata
       }
     }
 
