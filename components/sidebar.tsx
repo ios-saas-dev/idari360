@@ -19,6 +19,9 @@ import {
   Truck,
   Box,
   ShieldCheck,
+  CheckSquare,
+  FileCheck2,
+  Award,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -58,7 +61,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   // Standart menü öğeleri
   const navItems = [
     { name: 'Ana Sayfa', href: '/dashboard', icon: Home, badge: null },
-    { name: 'Talepler', href: '/dashboard/requests', icon: ClipboardList, badge: '12' },
+    { name: 'Talepler', href: '/dashboard/requests', icon: ClipboardList, badge: null },
+    { name: 'Aksiyonlar', href: '/dashboard/actions', icon: CheckSquare, badge: null },
+    { name: 'Denetimler', href: '/dashboard/audits', icon: FileCheck2, badge: null },
+    { name: 'Tedarikçiler', href: '/dashboard/suppliers', icon: Award, badge: null },
     { name: 'Yemekhane', href: '/dashboard/cafeteria', icon: UtensilsCrossed, badge: null },
     { name: 'Servis', href: '/dashboard/shuttle', icon: Bus, badge: null },
     { name: 'Filo Yönetimi', href: '/dashboard/fleet', icon: Car, badge: null },
