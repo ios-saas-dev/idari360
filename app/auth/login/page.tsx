@@ -69,13 +69,13 @@ function LoginFormContent() {
 
         if (profile?.role === 'super_admin' || profile?.role === 'company_admin') {
           // Süper Admin ve Şirket Yöneticisi doğrudan ana yönetim paneline gider
-          router.push('/dashboard');
+          window.location.href = '/dashboard';
         } else if (profile?.facility_id) {
           // Tesisi atanmış kullanıcı doğrudan dashboard'a gider
-          router.push('/dashboard');
+          window.location.href = '/dashboard';
         } else {
           // Tesis seçmesi gereken personel lokasyon seçimine gider
-          router.push('/auth/select-facility');
+          window.location.href = '/auth/select-facility';
         }
       }
     } catch (err: unknown) {
