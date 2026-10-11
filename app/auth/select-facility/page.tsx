@@ -276,6 +276,21 @@ export default function SelectFacilityPage() {
           </div>
         )}
 
+        {/* Tek tesis için teyit bannerı */}
+        {!loading && facilities.length === 1 && (
+          <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-start gap-3 text-sm">
+            <Building2 className="w-5 h-5 flex-shrink-0 text-blue-600 mt-0.5" />
+            <div>
+              <p className="font-semibold text-blue-900">
+                Kayıtlı Bulunduğunuz Lokasyon Seçildi: {facilities[0].name}
+              </p>
+              <p className="text-xs text-blue-700 mt-0.5">
+                Şirketinize ait aktif çalışma tesisi seçilmiştir. Lütfen lokasyonunuzu teyit etmek için &ldquo;Devam Et&rdquo; butonuna tıklayın.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Loading state */}
         {loading ? (
           <div className="flex-1 flex flex-col items-center justify-center py-20 text-slate-400">

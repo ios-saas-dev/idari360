@@ -13,6 +13,8 @@ import {
   Loader2,
   AlertCircle,
   AlertTriangle,
+  CheckCircle2,
+  Building2,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -31,23 +33,45 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Genel e-posta sağlayıcıları kontrolü (Kurumsal e-posta uyarısı)
-  const publicDomains = [
-    'gmail.com',
-    'hotmail.com',
-    'yahoo.com',
-    'outlook.com',
-    'live.com',
-    'icloud.com',
-    'yandex.com',
-  ];
+  // Domain Kontrol Durumları (Seçenek B: Kayıtsız Şirketleri Engelleme)
+  const [domainChecking, setDomainChecking] = useState(false);
+  const [matchedCompany, setMatchedCompany] = useState<string | null>(null);
+  const [domainError, setDomainError] = useState<string | null>(null);
 
-  const getEmailDomain = (emailStr: string) => {
-    const parts = emailStr.trim().toLowerCase().split('@');
-    return parts.length === 2 ? parts[1] : '';
+  const checkDomainAvailability = async (emailToCheck: string) => {
+    const cleanEmail = emailToCheck.trim().toLowerCase();
+    if (!cleanEmail.includes('@') || cleanEmail.split('@')[1].length < 3) {
+      setMatchedCompany(null);
+      setDomainError(null);
+      return;
+    }
+
+    try {
+      setDomainChecking(true);
+      setDomainError(null);
+      setMatchedCompany(null);
+
+      const res = await fetch('/api/auth/check-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+
+      const data = await res.json();
+
+      if (!data.registered) {
+        setDomainError(data.message || 'Şirketiniz henüz sistemde tanımlı değildir.');
+        setMatchedCompany(null);
+      } else {
+        setMatchedCompany(data.companyName);
+        setDomainError(null);
+      }
+    } catch {
+      // Hata durumunda formu engelleme, submit anındaki DB trigger kontrol etsin
+    } finally {
+      setDomainChecking(false);
+    }
   };
-
-  const isPublicEmail = publicDomains.includes(getEmailDomain(email));
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -60,6 +84,12 @@ export default function RegisterPage() {
 
     if (!email.trim()) {
       setError('Lütfen e-posta adresinizi girin.');
+      return;
+    }
+
+    // Seçenek B Kuralı: Şirket sistemde kayıtlı değilse kesinlikle engelle
+    if (domainError) {
+      setError(domainError);
       return;
     }
 
@@ -83,7 +113,7 @@ export default function RegisterPage() {
       const supabase = createBrowserClient();
 
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
         options: {
           data: {
@@ -94,12 +124,23 @@ export default function RegisterPage() {
       });
 
       if (signUpError) {
+        // Veritabanı triggerından dönen Seçenek B hata mesajını göster
         setError(signUpError.message || 'Kayıt olunurken bir hata oluştu.');
         return;
       }
 
       if (data.user) {
-        router.push(`/auth/verify?email=${encodeURIComponent(email.trim())}`);
+        // OTP kodu oluşturmak için backend API'yi tetikle
+        await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email.trim().toLowerCase(),
+            purpose: 'email_verification',
+          }),
+        });
+
+        router.push(`/auth/verify?email=${encodeURIComponent(email.trim().toLowerCase())}`);
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -118,31 +159,41 @@ export default function RegisterPage() {
       <div className="mb-6 text-left">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Üye Ol</h1>
         <p className="mt-2 text-sm text-slate-500">
-          İdari360 platformuna kayıt olun
+          İdari360 kurumsal yönetim platformuna kayıt olun
         </p>
       </div>
 
-      {/* Hata Bildirimi */}
+      {/* Genel Hata Bildirimi */}
       {error && (
         <div
           role="alert"
           aria-live="polite"
-          className="mb-5 p-4 rounded-lg bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 animate-in fade-in duration-200"
+          className="mb-5 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 animate-in fade-in duration-200"
         >
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600" />
           <p className="text-sm font-medium">{error}</p>
         </div>
       )}
 
-      {/* Genel E-posta Uyarısı */}
-      {isPublicEmail && (
+      {/* Şirket Eşleşme Başarılı Bildirimi */}
+      {matchedCompany && !domainError && (
+        <div className="mb-5 p-3.5 rounded-xl bg-green-50 border border-green-200 flex items-center gap-3 text-green-800 animate-in fade-in duration-200">
+          <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-green-600" />
+          <div className="text-xs font-semibold">
+            Şirket Doğrulandı: <span className="underline">{matchedCompany}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Seçenek B: Şirket Kayıtlı Değil Uyarısı */}
+      {domainError && (
         <div
-          role="note"
-          className="mb-5 p-3.5 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3 text-amber-800 animate-in fade-in duration-200"
+          role="alert"
+          className="mb-5 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 animate-in fade-in duration-200"
         >
-          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600" />
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-600" />
           <div className="text-xs font-medium leading-relaxed">
-            İdari360 kurumsal bir platformdur. Kurumunuza ait özel e-posta adresinizi (@sirketiniz.com) kullanmanız önerilir.
+            {domainError}
           </div>
         </div>
       )}
@@ -158,50 +209,65 @@ export default function RegisterPage() {
             Ad Soyad <span className="text-red-500">*</span>
           </label>
           <div className="relative">
-            <User
-              className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              aria-hidden="true"
-            />
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <User className="w-5 h-5" />
+            </div>
             <input
               id="fullName"
               name="fullName"
               type="text"
-              autoComplete="name"
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Adınız Soyadınız"
-              disabled={loading}
-              className="w-full h-12 pl-11 pr-4 rounded-lg border border-gray-200 text-slate-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+              placeholder="Ahmet Yılmaz"
+              className="w-full h-12 pl-11 pr-4 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
             />
           </div>
         </div>
 
-        {/* E-posta Adresi */}
+        {/* E-posta */}
         <div>
           <label
             htmlFor="email"
             className="block text-sm font-medium text-slate-700 mb-1"
           >
-            E-posta Adresi <span className="text-red-500">*</span>
+            Kurumsal E-posta <span className="text-red-500">*</span>
           </label>
           <div className="relative">
-            <Mail
-              className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              aria-hidden="true"
-            />
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <Mail className="w-5 h-5" />
+            </div>
             <input
               id="email"
               name="email"
               type="email"
-              autoComplete="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="ornek@sirket.com"
-              disabled={loading}
-              className="w-full h-12 pl-11 pr-4 rounded-lg border border-gray-200 text-slate-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setMatchedCompany(null);
+                setDomainError(null);
+              }}
+              onBlur={(e) => checkDomainAvailability(e.target.value)}
+              placeholder="ahmet.yilmaz@sirketiniz.com"
+              className={`w-full h-12 pl-11 pr-11 rounded-xl border bg-white text-slate-900 placeholder:text-slate-400 text-sm outline-none transition-all ${
+                domainError
+                  ? 'border-red-400 focus:ring-4 focus:ring-red-100'
+                  : matchedCompany
+                  ? 'border-green-400 focus:ring-4 focus:ring-green-100'
+                  : 'border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100'
+              }`}
             />
+            {domainChecking && (
+              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+              </div>
+            )}
+            {matchedCompany && !domainChecking && (
+              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-green-600">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+            )}
           </div>
         </div>
 
@@ -211,23 +277,20 @@ export default function RegisterPage() {
             htmlFor="phone"
             className="block text-sm font-medium text-slate-700 mb-1"
           >
-            Telefon <span className="text-slate-400 text-xs font-normal">(İsteğe bağlı)</span>
+            Telefon Numarası
           </label>
           <div className="relative">
-            <Phone
-              className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              aria-hidden="true"
-            />
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <Phone className="w-5 h-5" />
+            </div>
             <input
               id="phone"
               name="phone"
               type="tel"
-              autoComplete="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="05XX XXX XX XX"
-              disabled={loading}
-              className="w-full h-12 pl-11 pr-4 rounded-lg border border-gray-200 text-slate-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+              className="w-full h-12 pl-11 pr-4 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
             />
           </div>
         </div>
@@ -241,35 +304,25 @@ export default function RegisterPage() {
             Şifre <span className="text-red-500">*</span>
           </label>
           <div className="relative">
-            <Lock
-              className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              aria-hidden="true"
-            />
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <Lock className="w-5 h-5" />
+            </div>
             <input
               id="password"
               name="password"
               type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
               required
-              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="En az 8 karakter"
-              disabled={loading}
-              className="w-full h-12 pl-11 pr-11 rounded-lg border border-gray-200 text-slate-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+              placeholder="••••••••"
+              className="w-full h-12 pl-11 pr-11 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              disabled={loading}
-              aria-label={showPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-slate-600 focus:outline-none transition-colors"
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
             >
-              {showPassword ? (
-                <EyeOff className="w-5 h-5" />
-              ) : (
-                <Eye className="w-5 h-5" />
-              )}
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -283,81 +336,79 @@ export default function RegisterPage() {
             Şifre Tekrar <span className="text-red-500">*</span>
           </label>
           <div className="relative">
-            <Lock
-              className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              aria-hidden="true"
-            />
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <Lock className="w-5 h-5" />
+            </div>
             <input
               id="confirmPassword"
               name="confirmPassword"
               type={showConfirmPassword ? 'text' : 'password'}
-              autoComplete="new-password"
               required
-              minLength={8}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Şifrenizi tekrar girin"
-              disabled={loading}
-              className="w-full h-12 pl-11 pr-11 rounded-lg border border-gray-200 text-slate-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all disabled:bg-slate-50 disabled:cursor-not-allowed"
+              placeholder="••••••••"
+              className="w-full h-12 pl-11 pr-11 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all"
             />
             <button
               type="button"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              disabled={loading}
-              aria-label={showConfirmPassword ? 'Şifreyi gizle' : 'Şifreyi göster'}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-slate-600 focus:outline-none transition-colors"
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
             >
-              {showConfirmPassword ? (
-                <EyeOff className="w-5 h-5" />
-              ) : (
-                <Eye className="w-5 h-5" />
-              )}
+              {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
         </div>
 
         {/* Kullanım Şartları Onayı */}
         <div className="pt-1">
-          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+          <label className="flex items-start gap-2.5 cursor-pointer">
             <input
               type="checkbox"
               checked={termsAccepted}
               onChange={(e) => setTermsAccepted(e.target.checked)}
-              disabled={loading}
-              className="w-4 h-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+              className="mt-1 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
             />
-            <span className="text-xs leading-relaxed text-slate-600">
-              Kullanım şartlarını ve gizlilik politikasını okudum, kabul ediyorum.
+            <span className="text-xs text-slate-600 leading-relaxed">
+              <Link href="/terms" className="text-blue-600 hover:underline">
+                Kullanım şartlarını
+              </Link>{' '}
+              ve{' '}
+              <Link href="/privacy" className="text-blue-600 hover:underline">
+                gizlilik politikasını
+              </Link>{' '}
+              okudum, kabul ediyorum.
             </span>
           </label>
         </div>
 
-        {/* Kayıt Ol Butonu */}
+        {/* Üye Ol Butonu */}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full h-12 mt-2 flex items-center justify-center rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold shadow-sm hover:shadow transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          disabled={loading || Boolean(domainError) || domainChecking}
+          className="w-full h-12 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-xl transition-all shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
         >
           {loading ? (
-            <div className="flex items-center gap-2">
+            <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Hesap Oluşturuluyor...</span>
-            </div>
+              <span>Kaydediliyor...</span>
+            </>
           ) : (
-            'Üye Ol'
+            <span>Üye Ol</span>
           )}
         </button>
       </form>
 
-      {/* Alt Bilgi & Giriş Bağlantısı */}
-      <div className="mt-8 pt-5 border-t border-slate-100 text-center text-sm text-slate-600">
-        Zaten hesabınız var mı?{' '}
-        <Link
-          href="/auth/login"
-          className="font-semibold text-blue-600 hover:text-blue-700 hover:underline transition-colors"
-        >
-          Giriş Yapın
-        </Link>
+      {/* Alt Bilgi & Giriş Yap Linki */}
+      <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+        <p className="text-sm text-slate-500">
+          Zaten bir hesabınız var mı?{' '}
+          <Link
+            href="/auth/login"
+            className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+          >
+            Giriş Yapın
+          </Link>
+        </p>
       </div>
     </div>
   );
