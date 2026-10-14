@@ -6,12 +6,66 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;
+
+  // Fetch action with all related data including audit context
   const { data, error } = await supabase
     .from('actions')
-    .select(`*, responsible:profiles!actions_responsible_user_id_fkey(id, full_name, email), creator:profiles!actions_created_by_fkey(id, full_name), facility:facilities(id, name), action_history(id, old_status, new_status, note, created_at, changer:profiles(id, full_name))`)
-    .eq('id', id).single();
+    .select(`
+      *,
+      responsible:profiles!actions_responsible_user_id_fkey(id, full_name, email, avatar_url),
+      creator:profiles!actions_created_by_fkey(id, full_name, email),
+      facility:facilities(id, name, city),
+      action_history(id, old_status, new_status, note, created_at, changer:profiles(id, full_name)),
+      action_photos(id, photo_url, created_at, uploader:profiles(id, full_name))
+    `)
+    .eq('id', id)
+    .single();
+
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json({ data });
+
+  // If action has audit_id, fetch audit context separately
+  let auditContext = null;
+  if (data.audit_id) {
+    const { data: audit } = await supabase
+      .from('audits')
+      .select(`
+        id, title, audit_date, total_score, max_possible_score, percentage, status,
+        audit_type:audit_types(id, name, module)
+      `)
+      .eq('id', data.audit_id)
+      .single();
+    auditContext = audit;
+  }
+
+  // If action has audit_answer_id, fetch the linked answer with question
+  let auditAnswerContext = null;
+  if (data.audit_answer_id) {
+    const { data: answer } = await supabase
+      .from('audit_answers')
+      .select(`
+        id, answer, note, photo_url, due_date,
+        question:audit_questions(id, question_text)
+      `)
+      .eq('id', data.audit_answer_id)
+      .single();
+    auditAnswerContext = answer;
+  } else if (data.audit_question_id) {
+    // Fallback: fetch question text from audit_question_id
+    const { data: question } = await supabase
+      .from('audit_questions')
+      .select('id, question_text')
+      .eq('id', data.audit_question_id)
+      .single();
+    auditAnswerContext = { question };
+  }
+
+  return NextResponse.json({
+    data: {
+      ...data,
+      audit: auditContext,
+      audit_answer: auditAnswerContext,
+    }
+  });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

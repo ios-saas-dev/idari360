@@ -860,7 +860,7 @@ export default function AuditRunnerPage({
                               )}
                               {existingSaved?.action && (
                                 <Link
-                                  href={`/dashboard/actions`}
+                                  href={`/dashboard/actions/${existingSaved.action.id}`}
                                   className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-100 hover:bg-blue-200 px-2 py-0.5 rounded-md transition-colors"
                                 >
                                   <ExternalLink className="w-3 h-3" />
