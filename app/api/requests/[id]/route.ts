@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { sendRequestNotificationEmail } from '@/lib/email';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createServerSupabaseClient();
@@ -170,6 +171,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       note: historyNote,
       attachment_urls: historyPhotos,
     });
+
+    // E-posta Bildirimi Gönder (Resend Email)
+    if (updated?.creator?.email) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.com';
+      sendRequestNotificationEmail({
+        to: updated.creator.email,
+        recipientName: updated.creator.full_name,
+        requestNumber: updated.request_number,
+        title: updated.title,
+        status: targetStatus,
+        category: updated.category,
+        facilityName: updated.facility?.name,
+        note: historyNote,
+        changerName: profile.full_name,
+        actionUrl: `${baseUrl}/dashboard/requests/${id}`,
+      }).catch((e) => console.error('[sendRequestNotificationEmail error]', e));
+    }
   }
 
   return NextResponse.json({ data: updated });

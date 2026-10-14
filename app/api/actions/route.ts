@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { sendActionNotificationEmail } from '@/lib/email';
 
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -67,6 +68,28 @@ export async function POST(request: NextRequest) {
     changed_by: user.id,
     note: 'Aksiyon oluşturuldu',
   });
+
+  // Sorumlu kişiye e-posta bildirimi gönder (Resend Email)
+  if (data?.responsible_user_id) {
+    const { data: respProfile } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', data.responsible_user_id)
+      .single();
+
+    if (respProfile?.email) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.com';
+      sendActionNotificationEmail({
+        to: respProfile.email,
+        recipientName: respProfile.full_name,
+        actionNumber: data.action_number || 'Aksiyon',
+        title: data.title,
+        priority: data.priority,
+        dueDate: data.due_date,
+        actionUrl: `${baseUrl}/dashboard/actions`,
+      }).catch((e) => console.error('[sendActionNotificationEmail error]', e));
+    }
+  }
 
   return NextResponse.json({ data }, { status: 201 });
 }
