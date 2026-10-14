@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
 import {
   ShieldCheck,
@@ -19,26 +21,36 @@ import {
   Building2,
   User,
   TrendingUp,
+  Play,
+  ArrowRight,
 } from 'lucide-react';
 
 interface AuditItem {
   id: string;
   title: string;
-  module: 'catering' | 'shuttle' | 'cleaning' | 'security' | string;
+  module?: 'catering' | 'shuttle' | 'cleaning' | 'security' | string;
+  audit_type?: { id: string; name: string; module: string };
+  facility?: { id: string; name: string; city: string };
   facility_name?: string;
   facility_city?: string;
+  auditor?: { id: string; full_name: string };
   auditor_name?: string;
   audit_date?: string;
   score?: number | null;
+  total_score?: number | null;
+  percentage?: number | null;
   status: 'draft' | 'in_progress' | 'completed' | 'approved' | string;
   notes?: string;
 }
 
 export default function AuditsPage() {
+  const router = useRouter();
   const [audits, setAudits] = useState<AuditItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string>('');
+  const [auditTypes, setAuditTypes] = useState<Array<{ id: string; name: string; module: string }>>([]);
+  const [facilities, setFacilities] = useState<Array<{ id: string; name: string; city: string }>>([]);
   
   // Filters
   const [selectedModule, setSelectedModule] = useState<string>('all');
@@ -56,7 +68,8 @@ export default function AuditsPage() {
   // Form State
   const [formData, setFormData] = useState({
     title: '',
-    module: 'catering',
+    audit_type_id: '',
+    facility_id: '',
     audit_date: new Date().toISOString().split('T')[0],
     notes: '',
   });
@@ -64,25 +77,49 @@ export default function AuditsPage() {
   const supabase = createBrowserClient();
 
   useEffect(() => {
-    async function loadUser() {
+    async function loadMeta() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('role')
+            .select('role, company_id, facility_id')
             .eq('id', user.id)
             .single();
           if (profile) {
             setUserRole(profile.role);
           }
         }
+
+        // Load audit types
+        const { data: types } = await supabase
+          .from('audit_types')
+          .select('id, name, module')
+          .order('name');
+        if (types && types.length > 0) {
+          setAuditTypes(types);
+          setFormData((prev) => ({
+            ...prev,
+            audit_type_id: types[0].id,
+            title: `${types[0].name} - ${new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}`,
+          }));
+        }
+
+        // Load facilities
+        const { data: facs } = await supabase
+          .from('facilities')
+          .select('id, name, city')
+          .order('name');
+        if (facs && facs.length > 0) {
+          setFacilities(facs);
+          setFormData((prev) => ({ ...prev, facility_id: facs[0].id }));
+        }
       } catch (err) {
-        console.error('Kullanıcı rolü alınamadı:', err);
+        console.error('Meta veriler alınamadı:', err);
       }
     }
 
-    loadUser();
+    loadMeta();
     fetchAudits();
   }, []);
 
@@ -93,12 +130,18 @@ export default function AuditsPage() {
       const res = await fetch('/api/audits');
       if (res.ok) {
         const json = await res.json();
-        setAudits(json.data || []);
+        const mapped = (json.data || []).map((a: any) => ({
+          ...a,
+          module: a.audit_type?.module || a.module || 'catering',
+          facility_name: a.facility?.name || a.facility_name,
+          facility_city: a.facility?.city || a.facility_city,
+          auditor_name: a.auditor?.full_name || a.auditor_name,
+          score: a.total_score ?? a.percentage ?? a.score,
+        }));
+        setAudits(mapped);
       } else {
-        // If API is not yet fully seeded or returns error, provide standard response or error state
         const errJson = await res.json().catch(() => ({}));
         if (res.status === 404) {
-          // Graceful fallback if endpoint table isn't populated
           setAudits([]);
         } else {
           throw new Error(errJson.error || 'Denetim kayıtları alınamadı.');
@@ -117,8 +160,8 @@ export default function AuditsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
-      setModalError('Lütfen denetim başlığını belirtiniz.');
+    if (!formData.audit_type_id) {
+      setModalError('Lütfen bir denetim türü seçiniz.');
       return;
     }
 
@@ -131,7 +174,8 @@ export default function AuditsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formData.title,
-          module: formData.module,
+          audit_type_id: formData.audit_type_id,
+          facility_id: formData.facility_id || null,
           audit_date: formData.audit_date,
           notes: formData.notes,
         }),
@@ -142,14 +186,14 @@ export default function AuditsPage() {
         throw new Error(data.error || 'Denetim başlatılamadı.');
       }
 
+      const json = await res.json();
       setIsModalOpen(false);
-      setFormData({
-        title: '',
-        module: 'catering',
-        audit_date: new Date().toISOString().split('T')[0],
-        notes: '',
-      });
-      await fetchAudits();
+
+      if (json.data?.id) {
+        router.push(`/dashboard/audits/${json.data.id}`);
+      } else {
+        await fetchAudits();
+      }
     } catch (err: any) {
       setModalError(err.message || 'Denetim oluşturulurken bir sorun oluştu.');
     } finally {
@@ -477,14 +521,20 @@ export default function AuditsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredAudits.map((item) => {
-                  const modBadge = getModuleBadge(item.module);
+                  const modBadge = getModuleBadge(item.module || 'catering');
                   const stBadge = getStatusBadge(item.status);
                   const score = item.score ?? 0;
 
-                  return (
+                    return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
-                        {item.title}
+                        <Link
+                          href={`/dashboard/audits/${item.id}`}
+                          className="hover:text-blue-600 transition-colors flex items-center gap-1.5 group"
+                        >
+                          <span>{item.title}</span>
+                          <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-600" />
+                        </Link>
                       </td>
                       <td className="py-3.5 px-4">
                         <span
@@ -546,13 +596,35 @@ export default function AuditsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedAudit(item)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200/50"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          İncele
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Link
+                            href={`/dashboard/audits/${item.id}`}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl transition-all ${
+                              item.status === 'completed' || item.status === 'approved'
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                            }`}
+                          >
+                            {item.status === 'completed' || item.status === 'approved' ? (
+                              <>
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>Rapor & İncele</span>
+                              </>
+                            ) : (
+                              <>
+                                <ClipboardList className="w-3.5 h-3.5" />
+                                <span>Denetime Başla</span>
+                              </>
+                            )}
+                          </Link>
+                          <button
+                            onClick={() => setSelectedAudit(item)}
+                            title="Hızlı Önizleme"
+                            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -590,30 +662,63 @@ export default function AuditsPage() {
                 </div>
               )}
 
+              {/* Denetim Türü */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Modül Seçimi <span className="text-rose-500">*</span>
+                  Denetim Türü / Modülü <span className="text-rose-500">*</span>
                 </label>
                 <select
-                  value={formData.module}
-                  onChange={(e) => setFormData({ ...formData, module: e.target.value })}
+                  value={formData.audit_type_id}
+                  onChange={(e) => {
+                    const chosen = auditTypes.find((t) => t.id === e.target.value);
+                    setFormData({
+                      ...formData,
+                      audit_type_id: e.target.value,
+                      title: chosen
+                        ? `${chosen.name} - ${new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}`
+                        : formData.title,
+                    });
+                  }}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 bg-white"
                 >
-                  <option value="catering">Yemekhane Denetimi</option>
-                  <option value="shuttle">Servis & Güzergah Denetimi</option>
-                  <option value="cleaning">Temizlik & Hijyen Denetimi</option>
-                  <option value="security">Güvenlik & Giriş-Çıkış Denetimi</option>
+                  {auditTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (100 Puan)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tesis & Lokasyon */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Denetlenecek Tesis / Lokasyon <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={formData.facility_id}
+                  onChange={(e) => setFormData({ ...formData, facility_id: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 bg-white"
+                >
+                  {facilities.length > 0 ? (
+                    facilities.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} {f.city ? `(${f.city})` : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Varsayılan Merkez Tesis</option>
+                  )}
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Denetim Başlığı / Türü <span className="text-rose-500">*</span>
+                  Denetim Başlığı <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Örn: 2026-Q1 Yemekhane Hijyen Denetimi"
+                  placeholder="Örn: Ekim 2026 Yemekhane Yerinde Üretim Denetimi"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 bg-white"
@@ -635,10 +740,10 @@ export default function AuditsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Notlar / Açıklama
+                  Notlar / Açıklama (İsteğe Bağlı)
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   placeholder="Denetim kapsamı veya ön talimatlar..."
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -657,7 +762,7 @@ export default function AuditsPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-medium text-sm rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-medium text-sm rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 shadow-sm shadow-blue-500/20"
                 >
                   {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Denetimi Başlat
@@ -693,22 +798,22 @@ export default function AuditsPage() {
                 <div className="flex items-center gap-2 mt-2">
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${
-                      getModuleBadge(selectedAudit.module).bg
+                      getModuleBadge(selectedAudit.module || 'catering').bg
                     }`}
                   >
-                    {getModuleBadge(selectedAudit.module).label}
+                    {getModuleBadge(selectedAudit.module || 'catering').label}
                   </span>
                   <span
                     className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                      getStatusBadge(selectedAudit.status).bg
+                      getStatusBadge(selectedAudit.status || 'draft').bg
                     }`}
                   >
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${
-                        getStatusBadge(selectedAudit.status).dot
+                        getStatusBadge(selectedAudit.status || 'draft').dot
                       }`}
                     />
-                    {getStatusBadge(selectedAudit.status).label}
+                    {getStatusBadge(selectedAudit.status || 'draft').label}
                   </span>
                 </div>
               </div>

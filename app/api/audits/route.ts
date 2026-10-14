@@ -40,16 +40,19 @@ export async function POST(request: NextRequest) {
   if (!['super_admin','company_admin','facility_manager','facility_officer'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
 
   const body = await request.json();
-  const { audit_type_id, audit_date, notes, facility_id } = body;
+  const { title, audit_type_id, audit_date, notes, facility_id } = body;
   if (!audit_type_id || !audit_date) return NextResponse.json({ error: 'Eksik alanlar' }, { status: 400 });
 
-  const { data: auditType } = await supabase.from('audit_types').select('max_score').eq('id', audit_type_id).single();
+  const { data: auditType } = await supabase.from('audit_types').select('name, max_score').eq('id', audit_type_id).single();
+
+  const auditTitle = title?.trim() || auditType?.name || 'Denetim';
 
   const { data, error } = await supabase.from('audits').insert({
     company_id: profile!.company_id,
     facility_id: facility_id || profile!.facility_id,
     audit_type_id,
     auditor_id: user.id,
+    title: auditTitle,
     audit_date,
     total_score: 0,
     max_possible_score: auditType?.max_score || 100,
