@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       approver:profiles!requests_approved_by_fkey(id, full_name, email, avatar_url),
       facility:facilities(id, name, city),
       request_comments(id, comment, created_at, user:profiles(id, full_name, avatar_url)),
-      request_history(id, old_status, new_status, note, created_at, changer:profiles(id, full_name))
+      request_history(id, old_status, new_status, note, attachment_urls, created_at, changer:profiles(id, full_name))
     `)
     .eq('id', id)
     .single();
@@ -32,20 +32,40 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
   const { id } = await params;
-  const { data: profile } = await supabase.from('profiles').select('company_id, facility_id, role').eq('id', user.id).single();
+  const { data: profile } = await supabase.from('profiles').select('id, full_name, company_id, facility_id, role').eq('id', user.id).single();
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
 
   const body = await request.json();
-  const { status, assigned_to, approved_by, note, title, description, priority } = body;
+  const { status, action, assigned_to, approved_by, note, title, description, priority, resolution_photos } = body;
 
   // Get current request
-  const { data: currentReq } = await supabase.from('requests').select('status, created_by, company_id').eq('id', id).single();
-  if (!currentReq) return NextResponse.json({ error: 'Talep bulunamadı' }, { status: 404 });
-  if (currentReq.company_id !== profile.company_id) return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
+  const { data: currentReq } = await supabase
+    .from('requests')
+    .select('id, status, created_by, company_id, facility_id, request_number, title, created_at, assigned_at')
+    .eq('id', id)
+    .single();
 
-  // Role-based permission for status changes
+  if (!currentReq) return NextResponse.json({ error: 'Talep bulunamadı' }, { status: 404 });
+  if (currentReq.company_id !== profile.company_id && profile.role !== 'super_admin') {
+    return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
+  }
+
+  // Facility-level isolation for facility roles (Tesis Sorumlusu & Müdürü kendi tesisini yönetir)
+  if (['facility_manager', 'facility_officer'].includes(profile.role)) {
+    if (profile.facility_id && currentReq.facility_id !== profile.facility_id) {
+      return NextResponse.json({ error: 'Bu tesise ait talepleri yönetme yetkiniz bulunmamaktadır.' }, { status: 403 });
+    }
+  }
+
   const isMgr = ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(profile.role);
   const isCreator = currentReq.created_by === user.id;
+
+  const targetStatus = status || (action === 'take_over' ? 'islemde' : action === 'resolve' ? 'cozumlendi' : action === 'reject' ? 'reddedildi' : undefined);
+
+  // Employee can only cancel/reject their own 'yeni' request
+  if (profile.role === 'employee' && !(isCreator && currentReq.status === 'yeni' && targetStatus === 'reddedildi')) {
+    return NextResponse.json({ error: 'Durum değiştirme yetkiniz yok' }, { status: 403 });
+  }
 
   const updates: Record<string, unknown> = {};
   if (title && isMgr) updates.title = title;
@@ -53,25 +73,102 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (priority && isMgr) updates.priority = priority;
   if (assigned_to !== undefined && isMgr) updates.assigned_to = assigned_to;
   if (approved_by !== undefined && isMgr) updates.approved_by = approved_by;
-  if (status) {
-    // employee can only cancel their own new requests
-    if (profile.role === 'employee' && !(isCreator && currentReq.status === 'yeni' && status === 'reddedildi')) {
-      return NextResponse.json({ error: 'Durum değiştirme yetkiniz yok' }, { status: 403 });
+
+  let historyNote = note || null;
+  let historyPhotos: string[] = [];
+
+  // =========================================================================
+  // İŞ AKIŞI ADIMLARI VE KURALLARI
+  // =========================================================================
+
+  // Adım 2: Talebi Üzerine Alma (Statü: İşlemde / Üzerime Alındı)
+  if (action === 'take_over' || (targetStatus === 'islemde' && currentReq.status === 'yeni')) {
+    if (!isMgr) {
+      return NextResponse.json({ error: 'Talebi üzerinize alma yetkiniz yok.' }, { status: 403 });
     }
-    updates.status = status;
+    updates.status = 'islemde';
+    updates.assigned_to = user.id;
+    const nowIso = new Date().toISOString();
+    updates.assigned_at = nowIso;
+    historyNote = historyNote || `Talep Tesis Sorumlusu ${profile.full_name || 'yetkili'} tarafından üzerine alındı (T2: Karşılama)`;
+
+    // Talebi açan kişiye bildirim gönder (Notifications)
+    if (currentReq.created_by && currentReq.created_by !== user.id) {
+      await supabase.from('notifications').insert({
+        company_id: profile.company_id,
+        user_id: currentReq.created_by,
+        title: 'Talebiniz İşleme Alındı',
+        message: `Talebiniz (${currentReq.request_number || 'Talep'}) Tesis Sorumlusu ${profile.full_name || ''} tarafından işleme alınmıştır.`,
+        type: 'bildirim',
+        related_type: 'request',
+        related_id: id,
+      });
+    }
+  }
+  // Adım 3: Sonuçlandırma - Çözüm veya Red (Statü: Çözümlendi veya Reddedildi)
+  else if (targetStatus === 'cozumlendi' || targetStatus === 'reddedildi') {
+    // KRİTİK KURAL: Açıklama / Not Zorunlu Alan!
+    if (!note || !note.trim()) {
+      return NextResponse.json({ 
+        error: targetStatus === 'cozumlendi' 
+          ? 'Çözüm ile ilgili açıklama/not girilmesi zorunludur.' 
+          : 'Red sebebi ile ilgili açıklama/not girilmesi zorunludur.' 
+      }, { status: 400 });
+    }
+
+    const nowIso = new Date().toISOString();
+    updates.status = targetStatus;
+    updates.closed_at = nowIso;
+    updates.resolution_note = note.trim();
+    if (resolution_photos && Array.isArray(resolution_photos)) {
+      updates.resolution_photos = resolution_photos;
+      historyPhotos = resolution_photos;
+    }
+    historyNote = note.trim();
+
+    // Talebi açan kişiye bildirim gönder (Notifications)
+    if (currentReq.created_by && currentReq.created_by !== user.id) {
+      const isResolved = targetStatus === 'cozumlendi';
+      await supabase.from('notifications').insert({
+        company_id: profile.company_id,
+        user_id: currentReq.created_by,
+        title: isResolved ? 'Talebiniz Çözümlendi' : 'Talebiniz Reddedildi',
+        message: isResolved 
+          ? `Talebiniz (${currentReq.request_number || 'Talep'}) çözüme kavuşturuldu. Not: ${note.trim()}`
+          : `Talebiniz (${currentReq.request_number || 'Talep'}) reddedildi. Sebep: ${note.trim()}`,
+        type: isResolved ? 'bildirim' : 'uyari',
+        related_type: 'request',
+        related_id: id,
+      });
+    }
+  } else if (targetStatus) {
+    updates.status = targetStatus;
   }
 
-  const { data: updated, error } = await supabase.from('requests').update(updates).eq('id', id).select().single();
+  const { data: updated, error } = await supabase
+    .from('requests')
+    .update(updates)
+    .eq('id', id)
+    .select(`
+      *,
+      creator:profiles!requests_created_by_fkey(id, full_name, email, avatar_url),
+      assignee:profiles!requests_assigned_to_fkey(id, full_name, email, avatar_url),
+      approver:profiles!requests_approved_by_fkey(id, full_name, email, avatar_url),
+      facility:facilities(id, name, city)
+    `)
+    .single();
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Log status change
-  if (status && status !== currentReq.status) {
+  // Log to request_history
+  if (targetStatus && targetStatus !== currentReq.status) {
     await supabase.from('request_history').insert({
       request_id: id,
       old_status: currentReq.status,
-      new_status: status,
+      new_status: targetStatus,
       changed_by: user.id,
-      note: note || null,
+      note: historyNote,
+      attachment_urls: historyPhotos,
     });
   }
 

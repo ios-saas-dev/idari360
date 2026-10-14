@@ -59,9 +59,12 @@ export async function POST(request: NextRequest) {
   if (!profile?.company_id || !profile?.facility_id) return NextResponse.json({ error: 'Profile incomplete' }, { status: 400 });
 
   const body = await request.json();
-  const { title, description, category, priority, assigned_to } = body;
+  const { title, description, category, priority, assigned_to, attachment_urls, facility_id } = body;
 
   if (!title || !description || !category) return NextResponse.json({ error: 'Eksik alanlar' }, { status: 400 });
+
+  const targetFacilityId = facility_id || profile.facility_id;
+  if (!targetFacilityId) return NextResponse.json({ error: 'Tesis bilgisi bulunamadı' }, { status: 400 });
 
   // Generate request number: REQ-2026-00001 per company
   const year = new Date().getFullYear();
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
 
   const { data: newReq, error } = await supabase.from('requests').insert({
     company_id: profile.company_id,
-    facility_id: profile.facility_id,
+    facility_id: targetFacilityId,
     request_number,
     title,
     description,
@@ -91,6 +94,7 @@ export async function POST(request: NextRequest) {
     priority: priority || 'orta',
     status: 'yeni',
     assigned_to: assigned_to || null,
+    attachment_urls: attachment_urls || [],
     created_by: user.id,
   }).select().single();
 
@@ -101,7 +105,8 @@ export async function POST(request: NextRequest) {
     request_id: newReq.id,
     new_status: 'yeni',
     changed_by: user.id,
-    note: 'Talep oluşturuldu',
+    note: 'Talep oluşturuldu (T1: Açılış)',
+    attachment_urls: attachment_urls || [],
   });
 
   return NextResponse.json({ data: newReq }, { status: 201 });
