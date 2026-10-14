@@ -18,7 +18,9 @@ export async function GET(request: NextRequest) {
   const timeRange = searchParams.get('range') || 'son_6_ay';
   const queryFacilityId = searchParams.get('facility_id');
 
-  const cid = profile.company_id;
+  const paramCompanyId = searchParams.get('company_id');
+  const cid = paramCompanyId || profile.company_id;
+  const isSuperAdmin = profile.role === 'super_admin';
   
   // Tesis izolasyonu: Tesis Müdürü / Sorumlusu yalnızca kendi tesisini görür
   // Üst yöneticiler (super_admin, company_admin) konsolide tüm tesisleri görür (veya seçilen tesisi filtreler)
@@ -61,8 +63,11 @@ export async function GET(request: NextRequest) {
       assigned_to,
       facility:facilities(id, name, city),
       assignee:profiles!requests_assigned_to_fkey(id, full_name, role)
-    `)
-    .eq('company_id', cid);
+    `);
+
+  if (cid) {
+    reqQuery = reqQuery.eq('company_id', cid);
+  }
 
   if (activeFacilityId) {
     reqQuery = reqQuery.eq('facility_id', activeFacilityId);
@@ -72,10 +77,17 @@ export async function GET(request: NextRequest) {
   }
 
   // 2. Aksiyonlar, Denetimler, Varlıklar
-  let actQuery = supabase.from('actions').select('id, status, priority, created_at, due_date').eq('company_id', cid);
-  let audQuery = supabase.from('audits').select('id, status, percentage, audit_date').eq('company_id', cid);
-  let astQuery = supabase.from('assets').select('id, status, category').eq('company_id', cid);
-  let facQuery = supabase.from('facilities').select('id, name, city').eq('company_id', cid).eq('is_active', true);
+  let actQuery = supabase.from('actions').select('id, status, priority, created_at, due_date');
+  if (cid) actQuery = actQuery.eq('company_id', cid);
+
+  let audQuery = supabase.from('audits').select('id, status, percentage, audit_date');
+  if (cid) audQuery = audQuery.eq('company_id', cid);
+
+  let astQuery = supabase.from('assets').select('id, status, category');
+  if (cid) astQuery = astQuery.eq('company_id', cid);
+
+  let facQuery = supabase.from('facilities').select('id, name, city').eq('is_active', true);
+  if (cid) facQuery = facQuery.eq('company_id', cid);
 
   if (activeFacilityId) {
     actQuery = actQuery.eq('facility_id', activeFacilityId);

@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   Paperclip,
+  Building2,
 } from 'lucide-react';
 
 interface Profile {
@@ -56,6 +57,8 @@ export default function NewRequestPage() {
   const [assignedTo, setAssignedTo] = useState('');
   const [photoUrlInput, setPhotoUrlInput] = useState('');
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const [facilityId, setFacilityId] = useState('');
+  const [facilities, setFacilities] = useState<{ id: string; name: string; city?: string }[]>([]);
 
   // User & Profiles
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
@@ -84,11 +87,31 @@ export default function NewRequestPage() {
           const hasAssignPermission = MANAGER_ROLES.includes(profile.role);
           setCanAssign(hasAssignPermission);
 
+          // Fetch active facilities
+          let facQuery = supabase
+            .from('facilities')
+            .select('id, name, city')
+            .eq('is_active', true);
+
+          if (profile.role !== 'super_admin' && profile.company_id) {
+            facQuery = facQuery.eq('company_id', profile.company_id);
+          }
+
+          const { data: facs } = await facQuery.order('name');
+          if (facs && facs.length > 0) {
+            setFacilities(facs);
+            const initialFacId = profile.facility_id || facs[0].id;
+            setFacilityId(initialFacId);
+          }
+
           if (hasAssignPermission) {
             let query = supabase
               .from('profiles')
-              .select('id, full_name, email, role')
-              .eq('company_id', profile.company_id);
+              .select('id, full_name, email, role');
+
+            if (profile.role !== 'super_admin' && profile.company_id) {
+              query = query.eq('company_id', profile.company_id);
+            }
 
             if (!['super_admin', 'company_admin'].includes(profile.role) && profile.facility_id) {
               query = query.eq('facility_id', profile.facility_id);
@@ -159,6 +182,7 @@ export default function NewRequestPage() {
           priority,
           assigned_to: canAssign && assignedTo ? assignedTo : null,
           attachment_urls: attachmentUrls,
+          facility_id: facilityId || undefined,
         }),
       });
 
@@ -220,6 +244,30 @@ export default function NewRequestPage() {
           </div>
 
           <div className="space-y-4">
+            {/* Tesis / Lokasyon Seçimi */}
+            {facilities.length > 0 && (
+              <div>
+                <label htmlFor="facility_id" className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Tesis / Lokasyon <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <select
+                    id="facility_id"
+                    value={facilityId}
+                    onChange={(e) => setFacilityId(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  >
+                    {facilities.map((fac) => (
+                      <option key={fac.id} value={fac.id}>
+                        {fac.name} {fac.city ? `(${fac.city})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Title */}
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-1.5">
