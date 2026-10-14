@@ -18,6 +18,8 @@ import {
   ArrowUpRight,
   TrendingDown,
   Info,
+  User,
+  UserCheck,
 } from 'lucide-react';
 
 interface SummaryData {
@@ -83,6 +85,19 @@ interface SummaryData {
     on_target: boolean;
     target_badge: string;
   }>;
+  resolver_scorecards?: Array<{
+    user_id: string;
+    full_name: string;
+    role: string;
+    total_taken: number;
+    solved_count: number;
+    rejected_count: number;
+    in_progress_count: number;
+    success_rate: number;
+    avg_resolution_minutes: number;
+    on_target: boolean;
+    target_badge: string;
+  }>;
 }
 
 function formatMinutes(minutes?: number | null) {
@@ -102,6 +117,7 @@ export default function ReportsPage() {
   // Filters
   const [timeFilter, setTimeFilter] = useState<'bu_ay' | 'son_3_ay' | 'son_6_ay' | 'bu_yil'>('son_6_ay');
   const [selectedFacility, setSelectedFacility] = useState<string>('all');
+  const [scorecardTab, setScorecardTab] = useState<'facility' | 'resolver'>('facility');
 
   const fetchSummary = async () => {
     try {
@@ -160,7 +176,7 @@ export default function ReportsPage() {
     );
   }
 
-  const { kpi, donut_chart, duration_analysis, category_performance, facility_scorecards, user_scope, facilities_list } = data;
+  const { kpi, donut_chart, duration_analysis, category_performance, facility_scorecards, resolver_scorecards = [], user_scope, facilities_list } = data;
 
   // Donut SVG Calculations
   const donutRadius = 60;
@@ -587,104 +603,243 @@ export default function ReportsPage() {
       </div>
 
       {/* =========================================================================
-          4. TESİS / SORUMLU KARNESİ (Facility & Manager Scorecard)
+          4. TESİS VE SORUMLU PERFORMANS KARNELERİ (Ayrı Tesis & Sorumlu Odaklı)
          ========================================================================= */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden space-y-0">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Award className="w-5 h-5 text-amber-500" />
-              <span>Tesis / Sorumlu Performans Karnesi</span>
+              <span>Performans ve SLA Karnesi</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Hangi tesis ve sorumlu taleplere en hızlı müdahale ediyor, hangisi hedeflerin gerisinde kalıyor?
+              Karşılama süresi (T2-T1) tesisin karnesine; çözüm süresi (T3-T2) ise talebi üzerine alan kişinin karnesine yazılır.
             </p>
           </div>
-          <span className="text-xs font-mono font-semibold bg-slate-100 px-3 py-1 rounded-lg text-slate-700">
-            Hedef Karşılama: &le; 60 dk
-          </span>
+
+          {/* Karne Seçici Sekmeleri (Tesis / Sorumlu) */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100/80 rounded-xl border border-slate-200/60 self-start sm:self-auto">
+            <button
+              onClick={() => setScorecardTab('facility')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                scorecardTab === 'facility'
+                  ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Tesis Karnesi (T2 - T1)</span>
+            </button>
+            <button
+              onClick={() => setScorecardTab('resolver')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                scorecardTab === 'resolver'
+                  ? 'bg-white text-indigo-600 shadow-sm border border-slate-200/50'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>Sorumlu Karnesi (T3 - T2)</span>
+            </button>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
-                <th className="py-3.5 px-6">Tesis / Lokasyon</th>
-                <th className="py-3.5 px-4 text-center">Toplam Talep</th>
-                <th className="py-3.5 px-4 text-center">Çözülen</th>
-                <th className="py-3.5 px-4 text-center">İşlemde</th>
-                <th className="py-3.5 px-4 text-center">Reddedilen</th>
-                <th className="py-3.5 px-4 text-center">Başarı Oranı</th>
-                <th className="py-3.5 px-4 text-center">Ort. Karşılama (T2-T1)</th>
-                <th className="py-3.5 px-4 text-center">Ort. Çözüm (T3-T2)</th>
-                <th className="py-3.5 px-6 text-right">SLA Durumu</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {facility_scorecards.length > 0 ? (
-                facility_scorecards.map((f) => (
-                  <tr key={f.facility_id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-4 px-6">
-                      <div className="font-bold text-slate-900 text-sm">{f.facility_name}</div>
-                      <div className="text-[11px] text-slate-400">{f.city || 'Şehir Belirtilmemiş'}</div>
-                    </td>
+        {scorecardTab === 'facility' ? (
+          /* =========================================================================
+             A. TESİS KARNESİ: Karşılama Süresi (T2 - T1) Odaklı
+             ========================================================================= */
+          <div className="overflow-x-auto">
+            <div className="px-6 py-2 bg-blue-50/50 border-b border-blue-100 flex items-center justify-between text-xs text-blue-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Info className="w-4 h-4 text-blue-600" />
+                <span>Talep karşılanana kadar (üzerine alınana kadar) geçen süre doğrudan tesisin performans karnesine yazılır.</span>
+              </span>
+              <span className="font-mono font-bold bg-white px-2.5 py-0.5 rounded-md border border-blue-200">
+                Hedef Karşılama: &le; 60 dk
+              </span>
+            </div>
 
-                    <td className="py-4 px-4 text-center font-bold font-mono">{f.total_handled}</td>
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
+                  <th className="py-3.5 px-6">Tesis / Lokasyon</th>
+                  <th className="py-3.5 px-4 text-center">Toplam Talep</th>
+                  <th className="py-3.5 px-4 text-center">Bekleyen (Yeni)</th>
+                  <th className="py-3.5 px-4 text-center">İşlemde</th>
+                  <th className="py-3.5 px-4 text-center">Çözülen</th>
+                  <th className="py-3.5 px-4 text-center">Başarı Oranı</th>
+                  <th className="py-3.5 px-4 text-center text-blue-700 bg-blue-50/40">Ort. Karşılama (T2-T1)</th>
+                  <th className="py-3.5 px-6 text-right">SLA Karşılama Durumu</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {facility_scorecards.length > 0 ? (
+                  facility_scorecards.map((f) => (
+                    <tr key={f.facility_id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-4 px-6">
+                        <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-slate-400" />
+                          <span>{f.facility_name}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 ml-6">{f.city || 'Şehir Belirtilmemiş'}</div>
+                      </td>
 
-                    <td className="py-4 px-4 text-center font-semibold text-emerald-700 font-mono">
-                      {f.solved_count}
-                    </td>
+                      <td className="py-4 px-4 text-center font-bold font-mono">{f.total_handled}</td>
 
-                    <td className="py-4 px-4 text-center font-semibold text-amber-700 font-mono">
-                      {f.in_progress_count}
-                    </td>
+                      <td className="py-4 px-4 text-center font-semibold text-blue-700 font-mono">
+                        {f.open_count}
+                      </td>
 
-                    <td className="py-4 px-4 text-center font-semibold text-rose-700 font-mono">
-                      {f.rejected_count}
-                    </td>
+                      <td className="py-4 px-4 text-center font-semibold text-amber-700 font-mono">
+                        {f.in_progress_count}
+                      </td>
 
-                    <td className="py-4 px-4 text-center">
-                      <div className="font-bold text-slate-800">%{f.success_rate}</div>
-                      <div className="w-16 mx-auto bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
-                        <div
-                          className="bg-emerald-500 h-full rounded-full"
-                          style={{ width: `${f.success_rate}%` }}
-                        />
-                      </div>
-                    </td>
+                      <td className="py-4 px-4 text-center font-semibold text-emerald-700 font-mono">
+                        {f.solved_count}
+                      </td>
 
-                    <td className="py-4 px-4 text-center font-mono font-semibold">
-                      {formatMinutes(f.avg_response_minutes)}
-                    </td>
+                      <td className="py-4 px-4 text-center">
+                        <div className="font-bold text-slate-800">%{f.success_rate}</div>
+                        <div className="w-16 mx-auto bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
+                          <div
+                            className="bg-emerald-500 h-full rounded-full"
+                            style={{ width: `${f.success_rate}%` }}
+                          />
+                        </div>
+                      </td>
 
-                    <td className="py-4 px-4 text-center font-mono text-slate-600">
-                      {formatMinutes(f.avg_resolution_minutes)}
-                    </td>
+                      <td className="py-4 px-4 text-center font-mono font-bold text-blue-700 bg-blue-50/20">
+                        {formatMinutes(f.avg_response_minutes)}
+                      </td>
 
-                    <td className="py-4 px-6 text-right whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
-                          f.on_target
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : 'bg-rose-100 text-rose-800 border border-rose-200'
-                        }`}
-                      >
-                        {f.on_target ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-                        <span>{f.target_badge}</span>
-                      </span>
+                      <td className="py-4 px-6 text-right whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                            f.on_target
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}
+                        >
+                          {f.on_target ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                          <span>{f.target_badge}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      Kayıtlı tesis karne verisi bulunamadı.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    Kayıtlı tesis karne verisi bulunamadı.
-                  </td>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          /* =========================================================================
+             B. SORUMLU KARNESİ: Çözüm İşlem Süresi (T3 - T2) Odaklı
+             ========================================================================= */
+          <div className="overflow-x-auto">
+            <div className="px-6 py-2 bg-indigo-50/50 border-b border-indigo-100 flex items-center justify-between text-xs text-indigo-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Info className="w-4 h-4 text-indigo-600" />
+                <span>Talep üzerine alındıktan kapanana kadar geçen süre (T3 - T2) doğrudan ilgili kişinin karnesine yazılır.</span>
+              </span>
+              <span className="font-mono font-bold bg-white px-2.5 py-0.5 rounded-md border border-indigo-200">
+                Hedef Çözüm: &le; 4 Saat (240 dk)
+              </span>
+            </div>
+
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
+                  <th className="py-3.5 px-6">Sorumlu / Çözücü Yetkili</th>
+                  <th className="py-3.5 px-4 text-center">Rol</th>
+                  <th className="py-3.5 px-4 text-center">Üzerine Alınan</th>
+                  <th className="py-3.5 px-4 text-center">Çözülen</th>
+                  <th className="py-3.5 px-4 text-center">İşlemde Olan</th>
+                  <th className="py-3.5 px-4 text-center">Reddedilen</th>
+                  <th className="py-3.5 px-4 text-center">Çözüm Oranı</th>
+                  <th className="py-3.5 px-4 text-center text-indigo-700 bg-indigo-50/40">Ort. Çözüm (T3-T2)</th>
+                  <th className="py-3.5 px-6 text-right">SLA Çözüm Durumu</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {resolver_scorecards.length > 0 ? (
+                  resolver_scorecards.map((r) => (
+                    <tr key={r.user_id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs">
+                            {r.full_name?.slice(0, 2).toUpperCase() || 'SO'}
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-900 text-sm">{r.full_name}</div>
+                            <div className="text-[11px] text-slate-400">Çözücü Yetkili</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-4 text-center">
+                        <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-medium capitalize">
+                          {r.role.replace('_', ' ')}
+                        </span>
+                      </td>
+
+                      <td className="py-4 px-4 text-center font-bold font-mono">{r.total_taken}</td>
+
+                      <td className="py-4 px-4 text-center font-semibold text-emerald-700 font-mono">
+                        {r.solved_count}
+                      </td>
+
+                      <td className="py-4 px-4 text-center font-semibold text-amber-700 font-mono">
+                        {r.in_progress_count}
+                      </td>
+
+                      <td className="py-4 px-4 text-center font-semibold text-rose-700 font-mono">
+                        {r.rejected_count}
+                      </td>
+
+                      <td className="py-4 px-4 text-center">
+                        <div className="font-bold text-slate-800">%{r.success_rate}</div>
+                        <div className="w-16 mx-auto bg-slate-200 h-1.5 rounded-full overflow-hidden mt-1">
+                          <div
+                            className="bg-indigo-500 h-full rounded-full"
+                            style={{ width: `${r.success_rate}%` }}
+                          />
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-4 text-center font-mono font-bold text-indigo-700 bg-indigo-50/20">
+                        {formatMinutes(r.avg_resolution_minutes)}
+                      </td>
+
+                      <td className="py-4 px-6 text-right whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                            r.on_target
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}
+                        >
+                          {r.on_target ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                          <span>{r.target_badge}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                      Henüz talebi üzerine alıp sonuçlandıran sorumlu karne verisi bulunamadı.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

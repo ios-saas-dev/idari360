@@ -771,32 +771,45 @@ export default function RequestDetailPage({
             {(requestData.status === 'islemde' || requestData.status === 'atandi' || requestData.status === 'onaylandi') && (
               <div className="space-y-3">
                 <div className="text-xs text-slate-600 leading-relaxed">
-                  Talep şu anda <strong className="text-amber-700">İşlemde</strong> durumundadır. İşlemi tamamladığınızda talebi sonuçlandırınız:
+                  Talep şu anda <strong className="text-amber-700">İşlemde</strong> durumundadır.
                 </div>
 
+                {/* Sorumlu Kontrolü: Yalnızca talebi üzerine alan kişi veya üst yönetici sonuçlandırabilir */}
                 {canTakeAction ? (
-                  <div className="grid grid-cols-1 gap-2.5">
-                    {/* Çözüldü Olarak Kapat Butonu */}
-                    <button
-                      onClick={() => openResolutionModal('cozumlendi')}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm active:scale-[0.98] transition-all"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Çözüldü Olarak Kapat</span>
-                    </button>
+                  requestData.assigned_to && requestData.assigned_to !== currentUser?.id && !['super_admin', 'company_admin'].includes(currentUser?.role || '') ? (
+                    <div className="text-[11px] text-amber-800 bg-amber-50 rounded-xl p-3 border border-amber-200 space-y-1">
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <UserCheck className="w-4 h-4 text-amber-600" />
+                        <span>Sorumlu Tarafından Yürütülüyor</span>
+                      </div>
+                      <p className="text-slate-600">
+                        Bu talep <strong>{requestData.assignee?.full_name || 'yetkili'}</strong> tarafından üzerine alınmıştır. Akış ve çözüm süresi o kişinin karnesine yazılmaktadır.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {/* Çözüldü Olarak Kapat Butonu */}
+                      <button
+                        onClick={() => openResolutionModal('cozumlendi')}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm active:scale-[0.98] transition-all"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Çözüldü Olarak Kapat</span>
+                      </button>
 
-                    {/* Reddet Butonu */}
-                    <button
-                      onClick={() => openResolutionModal('reddedildi')}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 active:scale-[0.98] transition-all"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      <span>Reddet</span>
-                    </button>
-                  </div>
+                      {/* Reddet Butonu */}
+                      <button
+                        onClick={() => openResolutionModal('reddedildi')}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 active:scale-[0.98] transition-all"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        <span>Reddet</span>
+                      </button>
+                    </div>
+                  )
                 ) : (
                   <div className="text-[11px] text-amber-700 bg-amber-50 rounded-lg p-2.5 border border-amber-200">
-                    Talebi sonuçlandırma yetkisi Tesis Sorumlusu veya Şirket Yöneticisine aittir.
+                    Talebi sonuçlandırma yetkisi talebi üzerine alan sorumlu veya şirket yöneticisine aittir.
                   </div>
                 )}
               </div>

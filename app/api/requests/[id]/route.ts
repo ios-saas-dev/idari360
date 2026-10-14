@@ -42,7 +42,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   // Get current request
   const { data: currentReq } = await supabase
     .from('requests')
-    .select('id, status, created_by, company_id, facility_id, request_number, title, created_at, assigned_at')
+    .select('id, status, created_by, company_id, facility_id, request_number, title, created_at, assigned_to, assigned_at')
     .eq('id', id)
     .single();
 
@@ -108,6 +108,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
   // Adım 3: Sonuçlandırma - Çözüm veya Red (Statü: Çözümlendi veya Reddedildi)
   else if (targetStatus === 'cozumlendi' || targetStatus === 'reddedildi') {
+    // KURAL: Kim üstüne alırsa akış onun üzerinden ilerler (Üst yönetici override edebilir)
+    const isAssignee = currentReq.assigned_to === user.id;
+    const isTopAdmin = ['super_admin', 'company_admin'].includes(profile.role);
+    if (currentReq.assigned_to && !isAssignee && !isTopAdmin) {
+      return NextResponse.json({
+        error: 'Bu talep başka bir yetkili tarafından üzerine alınmıştır. Yalnızca talebi üzerine alan sorumlu veya şirket yöneticisi sonuçlandırabilir.',
+      }, { status: 403 });
+    }
+
     // KRİTİK KURAL: Açıklama / Not Zorunlu Alan!
     if (!note || !note.trim()) {
       return NextResponse.json({ 

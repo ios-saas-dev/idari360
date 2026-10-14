@@ -340,7 +340,76 @@ export async function GET(request: NextRequest) {
       avg_response_minutes: avgResp,
       avg_resolution_minutes: avgResol,
       on_target: onTarget,
-      target_badge: onTarget ? 'Hedefte' : 'Gecikmeli',
+      target_badge: onTarget ? 'Hedefte (≤ 60 dk)' : 'Gecikmeli',
+    };
+  });
+
+  // 5. Çözücü / Sorumlu Karnesi (Resolver & Manager Scorecard)
+  // Kural: "Talebi üzerine aldıklarında ise kapanana kadar geçen süre (T3 - T2) o kişinin karnesine yazılsın."
+  const resolverScorecardsMap: Record<string, {
+    user_id: string;
+    full_name: string;
+    role: string;
+    total_taken: number;
+    solved_count: number;
+    rejected_count: number;
+    in_progress_count: number;
+    resolution_times: number[];
+  }> = {};
+
+  requests.forEach((r: any) => {
+    if (!r.assigned_to) return;
+    const uid = r.assigned_to;
+    const name = r.assignee?.full_name || 'Bilinmeyen Sorumlu';
+    const role = r.assignee?.role || 'Sorumlu';
+
+    if (!resolverScorecardsMap[uid]) {
+      resolverScorecardsMap[uid] = {
+        user_id: uid,
+        full_name: name,
+        role,
+        total_taken: 0,
+        solved_count: 0,
+        rejected_count: 0,
+        in_progress_count: 0,
+        resolution_times: [],
+      };
+    }
+
+    const item = resolverScorecardsMap[uid];
+    item.total_taken += 1;
+    if (r.status === 'cozumlendi' || r.status === 'tamamlandi') item.solved_count += 1;
+    else if (r.status === 'reddedildi') item.rejected_count += 1;
+    else if (r.status === 'islemde' || r.status === 'atandi') item.in_progress_count += 1;
+
+    // T3 - T2 (Çözüm İşlem Süresi)
+    if (r.sla_resolution_minutes != null && Number(r.sla_resolution_minutes) >= 0) {
+      item.resolution_times.push(Number(r.sla_resolution_minutes));
+    } else if (r.closed_at && r.assigned_at) {
+      const diffMin = (new Date(r.closed_at).getTime() - new Date(r.assigned_at).getTime()) / 60000;
+      if (diffMin >= 0) item.resolution_times.push(diffMin);
+    }
+  });
+
+  const resolverScorecards = Object.values(resolverScorecardsMap).map((res) => {
+    const avgResol = res.resolution_times.length > 0
+      ? Math.round(res.resolution_times.reduce((a, b) => a + b, 0) / res.resolution_times.length)
+      : 0;
+    const successRate = res.total_taken > 0 ? Math.round((res.solved_count / res.total_taken) * 100) : 0;
+    const onTarget = avgResol > 0 && avgResol <= RESOLUTION_TARGET_MINUTES;
+
+    return {
+      user_id: res.user_id,
+      full_name: res.full_name,
+      role: res.role,
+      total_taken: res.total_taken,
+      solved_count: res.solved_count,
+      rejected_count: res.rejected_count,
+      in_progress_count: res.in_progress_count,
+      success_rate: successRate,
+      avg_resolution_minutes: avgResol,
+      on_target: onTarget,
+      target_badge: onTarget ? 'Hedefte (≤ 4s)' : 'Gecikmeli',
     };
   });
 
@@ -379,6 +448,7 @@ export async function GET(request: NextRequest) {
     duration_analysis: durationComparison,
     category_performance: categoryPerformance,
     facility_scorecards: facilityScorecards,
+    resolver_scorecards: resolverScorecards,
     monthly_trend: monthlyRequests,
     actions: {
       total: actions.length,

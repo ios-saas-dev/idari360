@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { sendRequestNotificationEmail } from '@/lib/email';
 
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -156,11 +157,14 @@ export async function POST(request: NextRequest) {
       category,
       priority: priority || 'orta',
       status: 'yeni',
-      assigned_to: assigned_to || null,
+      assigned_to: null,
       attachment_urls: attachment_urls || [],
       created_by: user.id,
     })
-    .select()
+    .select(`
+      *,
+      facility:facilities(id, name, city)
+    `)
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -173,6 +177,57 @@ export async function POST(request: NextRequest) {
     note: 'Talep oluşturuldu (T1: Açılış)',
     attachment_urls: attachment_urls || [],
   });
+
+  // Tesis Yetkililerini Bul ve Bilgilendir (Tesis Müdürü, Tesis Sorumlusu, Şirket Yöneticisi)
+  try {
+    const { data: authorities } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role')
+      .eq('company_id', targetCompanyId)
+      .eq('is_active', true)
+      .in('role', ['company_admin', 'facility_manager', 'facility_officer'])
+      .or(`facility_id.eq.${targetFacilityId},facility_id.is.null,role.eq.company_admin`);
+
+    if (authorities && authorities.length > 0) {
+      const facilityName = (newReq.facility as { name?: string })?.name || 'Tesis';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.com';
+      const actionUrl = `${baseUrl}/dashboard/requests/${newReq.id}`;
+
+      // 1. Sistem İçi Bildirimler (In-app Notifications)
+      const notifRows = authorities.map((auth) => ({
+        company_id: targetCompanyId,
+        user_id: auth.id,
+        title: 'Yeni Talep Havuzda (Karşılama Bekliyor)',
+        message: `${facilityName} tesisinde yeni bir talep (${newReq.request_number}) açıldı. Lütfen üzerinize alınız.`,
+        type: 'bildirim' as const,
+        related_type: 'request',
+        related_id: newReq.id,
+      }));
+      await supabase.from('notifications').insert(notifRows);
+
+      // 2. E-posta Bildirimleri (Resend Email)
+      await Promise.allSettled(
+        authorities
+          .filter((auth) => auth.email && auth.id !== user.id)
+          .map((auth) =>
+            sendRequestNotificationEmail({
+              to: auth.email,
+              recipientName: auth.full_name,
+              requestNumber: newReq.request_number,
+              title: newReq.title,
+              status: 'yeni',
+              category: newReq.category,
+              facilityName,
+              actionUrl,
+              changerName: profile.full_name || 'Kullanıcı',
+              note: 'Talep havuza düştü, lütfen üzerinize alınız.',
+            })
+          )
+      );
+    }
+  } catch (notifErr) {
+    console.error('Yetkililere bildirim gönderilirken hata:', notifErr);
+  }
 
   return NextResponse.json({ data: newReq }, { status: 201 });
 }

@@ -10,7 +10,6 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
-  UserCheck,
   FileText,
   Image as ImageIcon,
   Plus,
@@ -18,13 +17,6 @@ import {
   Paperclip,
   Building2,
 } from 'lucide-react';
-
-interface Profile {
-  id: string;
-  full_name: string;
-  email: string;
-  role: string;
-}
 
 const CATEGORIES = [
   { value: 'yemekhane', label: 'Yemekhane' },
@@ -43,7 +35,6 @@ const PRIORITIES = [
   { value: 'kritik', label: 'Kritik' },
 ];
 
-const MANAGER_ROLES = ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'];
 
 export default function NewRequestPage() {
   const router = useRouter();
@@ -54,7 +45,6 @@ export default function NewRequestPage() {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('yemekhane');
   const [priority, setPriority] = useState('orta');
-  const [assignedTo, setAssignedTo] = useState('');
   const [photoUrlInput, setPhotoUrlInput] = useState('');
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
   const [facilityId, setFacilityId] = useState('');
@@ -62,8 +52,6 @@ export default function NewRequestPage() {
 
   // User & Profiles
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
-  const [assignableProfiles, setAssignableProfiles] = useState<Profile[]>([]);
-  const [canAssign, setCanAssign] = useState(false);
 
   // Status states
   const [submitting, setSubmitting] = useState(false);
@@ -84,8 +72,6 @@ export default function NewRequestPage() {
 
         if (profile) {
           setCurrentUserRole(profile.role);
-          const hasAssignPermission = MANAGER_ROLES.includes(profile.role);
-          setCanAssign(hasAssignPermission);
 
           // Fetch active facilities
           let facQuery = supabase
@@ -102,25 +88,6 @@ export default function NewRequestPage() {
             setFacilities(facs);
             const initialFacId = profile.facility_id || facs[0].id;
             setFacilityId(initialFacId);
-          }
-
-          if (hasAssignPermission) {
-            let query = supabase
-              .from('profiles')
-              .select('id, full_name, email, role');
-
-            if (profile.role !== 'super_admin' && profile.company_id) {
-              query = query.eq('company_id', profile.company_id);
-            }
-
-            if (!['super_admin', 'company_admin'].includes(profile.role) && profile.facility_id) {
-              query = query.eq('facility_id', profile.facility_id);
-            }
-
-            const { data: profiles } = await query;
-            if (profiles) {
-              setAssignableProfiles(profiles);
-            }
           }
         }
       } catch (err) {
@@ -180,7 +147,7 @@ export default function NewRequestPage() {
           description: description.trim(),
           category,
           priority,
-          assigned_to: canAssign && assignedTo ? assignedTo : null,
+          assigned_to: null,
           attachment_urls: attachmentUrls,
           facility_id: facilityId || undefined,
         }),
@@ -428,39 +395,6 @@ export default function NewRequestPage() {
           </div>
         </div>
 
-        {/* Atama Section (Only for facility_manager+ roles) */}
-        {canAssign && (
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-              <UserCheck className="w-5 h-5 text-indigo-600" />
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Atama Bilgileri</h2>
-                <p className="text-xs text-slate-500">
-                  Bu talebi doğrudan ilgili personele veya sorumluya atayabilirsiniz (İsteğe bağlı).
-                </p>
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="assigned_to" className="block text-sm font-medium text-slate-700 mb-1.5">
-                Atanacak Kişi
-              </label>
-              <select
-                id="assigned_to"
-                value={assignedTo}
-                onChange={(e) => setAssignedTo(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              >
-                <option value="">Atama Yapma (Boş Bırak)</option>
-                {assignableProfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.full_name} ({p.email}) - {p.role}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
 
         {/* Form Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">

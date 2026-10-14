@@ -407,6 +407,184 @@ export async function sendRequestNotificationEmail({
 }
 
 /* ============================================================================
+   3b. 24 SAAT ESKALASYON BİLDİRİMLERİ (SLA Uyarıları)
+============================================================================ */
+
+/**
+ * 24 Saattir Karşılanmayan (Üzerine Alınmayan) Talep Bildirimi
+ * Tesisin tüm yetkililerine (Tesis Müdürü, Tesis Sorumlusu, Şirket Yöneticisi) gönderilir.
+ */
+export async function sendUnassignedRequestEscalationEmail({
+  to,
+  recipientName,
+  requestNumber,
+  title,
+  category,
+  facilityName,
+  waitingHours,
+  actionUrl,
+}: {
+  to: string | string[];
+  recipientName?: string;
+  requestNumber: string;
+  title: string;
+  category?: string;
+  facilityName?: string;
+  waitingHours: number;
+  actionUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const subject = `[ACİL] Karşılanmayan Talep Uyarısı (${waitingHours} saattir beklemede): ${requestNumber}`;
+
+  const contentHtml = `
+    <h2 style="color: #b91c1c; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Sayın ${recipientName},` : 'Sayın Tesis Yetkilisi,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      Aşağıda detayları belirtilen talep <strong>${waitingHours} saattir</strong> hiçbir tesis sorumlusu tarafından üzerine alınmamıştır. Karşılama süresi (T2 - T1) doğrudan <strong>tesisinizin performans karnesine</strong> olumsuz yansımaktadır. Lütfen ivedilikle talebi üzerinize alınız.
+    </p>
+
+    <!-- Request Details Table -->
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr>
+          <td style="color: #991b1b; padding: 6px 0; width: 140px; font-weight: 600;">Talep No:</td>
+          <td style="color: #0f172a; font-weight: 700; font-family: monospace;">${requestNumber}</td>
+        </tr>
+        <tr>
+          <td style="color: #991b1b; padding: 6px 0; font-weight: 600;">Başlık:</td>
+          <td style="color: #0f172a; font-weight: 600;">${title}</td>
+        </tr>
+        ${category ? `
+        <tr>
+          <td style="color: #991b1b; padding: 6px 0; font-weight: 600;">Kategori:</td>
+          <td style="color: #334155;">${category.toUpperCase()}</td>
+        </tr>` : ''}
+        ${facilityName ? `
+        <tr>
+          <td style="color: #991b1b; padding: 6px 0; font-weight: 600;">Tesis / Lokasyon:</td>
+          <td style="color: #334155; font-weight: 600;">${facilityName}</td>
+        </tr>` : ''}
+        <tr>
+          <td style="color: #991b1b; padding: 6px 0; font-weight: 600;">Bekleme Süresi:</td>
+          <td style="color: #dc2626; font-weight: 700;">${waitingHours} Saat</td>
+        </tr>
+        <tr>
+          <td style="color: #991b1b; padding: 6px 0; font-weight: 600;">Durum:</td>
+          <td>
+            <span style="display: inline-block; background-color: #fee2e2; color: #dc2626; font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+              AÇIK / KARŞILANMADI (T1)
+            </span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    ${actionUrl ? `
+    <div style="text-align: center; margin: 24px 0 10px 0;">
+      <a href="${actionUrl}" style="display: inline-block; background-color: #dc2626; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 600; padding: 13px 26px; border-radius: 10px; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);">
+        Talebi Şimdi Üzerine Al
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: 'ACİL: KARŞILANMAYAN TALEP ESKALASYONU',
+    badgeText: '24+ SAAT BEKLEMEDE',
+    badgeColor: '#dc2626',
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}
+
+/**
+ * 24 Saattir Kapatılmayan (Çözümlenmeyen) Talep Bildirimi
+ * Talebi üzerine alan kişiye (assigned_to) gönderilir.
+ */
+export async function sendInProgressRequestReminderEmail({
+  to,
+  recipientName,
+  requestNumber,
+  title,
+  category,
+  facilityName,
+  inProgressHours,
+  actionUrl,
+}: {
+  to: string;
+  recipientName?: string;
+  requestNumber: string;
+  title: string;
+  category?: string;
+  facilityName?: string;
+  inProgressHours: number;
+  actionUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const subject = `[HATIRLATMA] Çözüm Bekleyen Talep (${inProgressHours} saattir işlemde): ${requestNumber}`;
+
+  const contentHtml = `
+    <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Merhaba ${recipientName},` : 'Merhaba,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      Üzerinize almış olduğunuz aşağıdaki talep <strong>${inProgressHours} saattir</strong> işlemde beklemektedir ve henüz kapatılmamıştır. Çözüm işlem süresi (T3 - T2) doğrudan <strong>bireysel performans karnenize</strong> yazılmaktadır. Lütfen süreci tamamlayıp talebi "Çözüldü" veya "Reddet" olarak sonuçlandırınız.
+    </p>
+
+    <!-- Request Details Table -->
+    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr>
+          <td style="color: #92400e; padding: 6px 0; width: 140px; font-weight: 600;">Talep No:</td>
+          <td style="color: #0f172a; font-weight: 700; font-family: monospace;">${requestNumber}</td>
+        </tr>
+        <tr>
+          <td style="color: #92400e; padding: 6px 0; font-weight: 600;">Başlık:</td>
+          <td style="color: #0f172a; font-weight: 600;">${title}</td>
+        </tr>
+        ${category ? `
+        <tr>
+          <td style="color: #92400e; padding: 6px 0; font-weight: 600;">Kategori:</td>
+          <td style="color: #334155;">${category.toUpperCase()}</td>
+        </tr>` : ''}
+        ${facilityName ? `
+        <tr>
+          <td style="color: #92400e; padding: 6px 0; font-weight: 600;">Tesis / Lokasyon:</td>
+          <td style="color: #334155;">${facilityName}</td>
+        </tr>` : ''}
+        <tr>
+          <td style="color: #92400e; padding: 6px 0; font-weight: 600;">İşlemdeki Süre:</td>
+          <td style="color: #b45309; font-weight: 700;">${inProgressHours} Saat</td>
+        </tr>
+        <tr>
+          <td style="color: #92400e; padding: 6px 0; font-weight: 600;">Durum:</td>
+          <td>
+            <span style="display: inline-block; background-color: #fef3c7; color: #b45309; font-size: 11.5px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+              İŞLEMDE (T2 ÜZERİME ALINDI)
+            </span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    ${actionUrl ? `
+    <div style="text-align: center; margin: 24px 0 10px 0;">
+      <a href="${actionUrl}" style="display: inline-block; background-color: #d97706; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 600; padding: 13px 26px; border-radius: 10px; box-shadow: 0 2px 8px rgba(217, 119, 6, 0.25);">
+        Talebi Sonuçlandır (Kapat)
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: 'ÇÖZÜM BEKLEYEN TALEP HATIRLATMASI',
+    badgeText: '24+ SAAT İŞLEMDE',
+    badgeColor: '#d97706',
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}
+
+/* ============================================================================
    4. AKSİYON BİLDİRİMLERİ (Yeni Atama veya Gecikme Uyarısı)
 ============================================================================ */
 export async function sendActionNotificationEmail({
