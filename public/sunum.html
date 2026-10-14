@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>İdari360 — Akıllı İdari İşlemler Yönetim Platformu | Sunum</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            },
+            navy: {
+              900: '#0b1329',
+              950: '#070c1b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #070c1b; color: #f8fafc; overflow: hidden; }
+    .slide { display: none; opacity: 0; transition: opacity 0.35s ease, transform 0.35s ease; transform: scale(0.98); }
+    .slide.active { display: flex; opacity: 1; transform: scale(1); }
+    .glass { background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glass-card { background: rgba(30, 41, 59, 0.55); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    .glow-blue { box-shadow: 0 0 50px -10px rgba(37, 99, 235, 0.35); }
+    .glow-cyan { box-shadow: 0 0 50px -10px rgba(6, 182, 212, 0.35); }
+    .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between selection:bg-brand-500 selection:text-white">
+
+  <!-- TOP HEADER / NAV -->
+  <header class="h-16 px-8 flex items-center justify-between border-b border-slate-800/80 bg-navy-950/70 backdrop-blur z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-cyan-400 flex items-center justify-center font-bold text-white shadow-lg shadow-brand-500/20">
+        360
+      </div>
+      <div>
+        <span class="text-xl font-bold tracking-tight text-white">İdari<span class="text-cyan-400">360</span></span>
+        <span class="hidden sm:inline-block ml-3 px-2 py-0.5 rounded text-[11px] font-semibold bg-brand-500/10 text-brand-400 border border-brand-500/20">V1.0 PROD</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="text-xs text-slate-400 font-mono">
+        <span id="slideCounter" class="text-cyan-400 font-bold">01</span> / <span id="totalSlides">12</span>
+      </div>
+      <button onclick="toggleFullScreen()" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition" title="Tam Ekran (F)">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+      </button>
+      <a href="https://idari360.com" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white transition flex items-center gap-1.5 shadow-md shadow-brand-600/30">
+        <span>Canlı Sistem</span>
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- PROGRESS BAR -->
+  <div class="w-full h-1 bg-slate-900 z-30">
+    <div id="progressBar" class="h-full bg-gradient-to-r from-brand-600 via-cyan-400 to-indigo-500 transition-all duration-300" style="width: 8.33%;"></div>
+  </div>
+
+  <!-- SLIDES CONTAINER -->
+  <main class="flex-1 overflow-hidden relative p-6 sm:p-10 flex items-center justify-center">
+
+    <!-- SLIDE 1: KAPAK -->
+    <section class="slide active flex-col items-center justify-center text-center max-w-5xl w-full mx-auto" data-slide="1">
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-semibold mb-6">
+        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+        Kurumsal SaaS &amp; Tesis Yönetim Platformu
+      </div>
+      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-tight text-white mb-6">
+        Akıllı İdari İşlemler<br>
+        <span class="bg-gradient-to-r from-cyan-400 via-brand-500 to-indigo-400 bg-clip-text text-transparent">Yönetim Platformu</span>
+      </h1>
+      <p class="text-base sm:text-xl text-slate-300 max-w-2xl mb-10 leading-relaxed font-normal">
+        Tüm şube ve tesislerinizin talep, denetim, yemekhane, servis, temizlik ve varlık süreçlerini tek çatı altında toplayan, SLA ölçümlü yeni nesil yönetim sistemi.
+      </p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full max-w-3xl">
+        <div class="glass-card p-4 rounded-xl text-center">
+          <div class="text-2xl font-bold text-cyan-400">12+</div>
+          <div class="text-xs text-slate-400 mt-1">Entegre Modül</div>
+        </div>
+        <div class="glass-card p-4 rounded-xl text-center">
+          <div class="text-2xl font-bold text-brand-400">T1 → T3</div>
+          <div class="text-xs text-slate-400 mt-1">Zaman Damgalı SLA</div>
+        </div>
+        <div class="glass-card p-4 rounded-xl text-center">
+          <div class="text-2xl font-bold text-emerald-400">24 Saat</div>
+          <div class="text-xs text-slate-400 mt-1">Otomatik Eskalasyon</div>
+        </div>
+        <div class="glass-card p-4 rounded-xl text-center">
+          <div class="text-2xl font-bold text-purple-400">%100</div>
+          <div class="text-xs text-slate-400 mt-1">RLS &amp; Tenant İzolasyon</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: PROBLEM & ÇÖZÜM -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="2">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Neden İdari360?</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">Geleneksel Kaostan Dijital Düzen ve Hıza</h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 items-stretch">
+        <div class="glass p-6 sm:p-8 rounded-2xl border-red-500/20 bg-red-950/10 flex flex-col justify-between">
+          <div>
+            <div class="inline-flex items-center gap-2 text-red-400 font-bold text-sm mb-4">
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+              GELENEKSEL YÖNTEMLER
+            </div>
+            <ul class="space-y-3.5 text-sm sm:text-base text-slate-300">
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 mt-0.5">✕</span>
+                <span>WhatsApp, telefon ve koridor sohbetlerinde kaybolan arıza/hizmet bildirimleri</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 mt-0.5">✕</span>
+                <span>"Talep açtım ama kimse ilgilenmedi" şikayetleri ve kimin sorumlu olduğunun bilinememesi</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 mt-0.5">✕</span>
+                <span>Hangi tesis ne kadar hızlı müdahale ediyor, hangi sorumlu işi ne kadar sürede çözüyor ölçülemiyor</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-red-400 mt-0.5">✕</span>
+                <span>Excel tablolarında tutulan, silinen, birbiriyle çelişen denetim ve zimmet kayıtları</span>
+              </li>
+            </ul>
+          </div>
+          <div class="mt-6 pt-4 border-t border-red-500/20 text-xs text-red-300 font-mono">
+            Sonuç: Verimsizlik, bütçe kaybı ve çalışan memnuniyetsizliği.
+          </div>
+        </div>
+
+        <div class="glass p-6 sm:p-8 rounded-2xl border-emerald-500/30 bg-emerald-950/10 flex flex-col justify-between">
+          <div>
+            <div class="inline-flex items-center gap-2 text-emerald-400 font-bold text-sm mb-4">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              İDARİ360 STANDARDI
+            </div>
+            <ul class="space-y-3.5 text-sm sm:text-base text-slate-300">
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 mt-0.5">✓</span>
+                <span><strong>Ortak Havuz Modeli:</strong> Talep açıldığı an tesisin tüm yetkililerine anlık bildirim</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 mt-0.5">✓</span>
+                <span><strong>Üzerime Al:</strong> Çözücü talebi sahiplenir, T2 müdahale süresi kaydedilir</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 mt-0.5">✓</span>
+                <span><strong>İkili Karne:</strong> Tesis müdahale hızı (T2-T1) vs. Sorumlu çözüm performansı (T3-T2)</span>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="text-emerald-400 mt-0.5">✓</span>
+                <span><strong>24 Saat Eskalasyon:</strong> Bekleyen işlerde yöneticiye otomatik e-posta alarmları</span>
+              </li>
+            </ul>
+          </div>
+          <div class="mt-6 pt-4 border-t border-emerald-500/30 text-xs text-emerald-300 font-mono">
+            Sonuç: Şeffaf iş akışı, ölçülebilir SLA ve operasyonel mükemmellik.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: TEKNİK MİMARİ -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="3">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Teknik Altyapı</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">Modern, Güvenli ve Ölçeklenebilir Mimari</h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-black border border-slate-700 flex items-center justify-center font-bold text-xl text-white mb-4">▲</div>
+            <h3 class="text-lg font-bold text-white mb-2">Next.js 16.4 &amp; Tailwind</h3>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              React Server Components, App Router mimarisi, sıfır gecikmeli arayüz geçişleri ve tam responsive Tailwind v4 tasarımı.
+            </p>
+          </div>
+          <div class="mt-4 pt-4 border-t border-slate-800 text-xs font-mono text-cyan-400">
+            Frontend + Edge API + Proxy
+          </div>
+        </div>
+
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-bold text-xl text-emerald-400 mb-4">⚡</div>
+            <h3 class="text-lg font-bold text-white mb-2">Supabase (PostgreSQL 15)</h3>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              12 veritabanı migration'ı, 20+ ilişkisel tablo, 100+ RLS (Row Level Security) kuralı ile kurumsal seviye tenant izolasyonu.
+            </p>
+          </div>
+          <div class="mt-4 pt-4 border-t border-slate-800 text-xs font-mono text-emerald-400">
+            Veritabanı + Auth + Storage
+          </div>
+        </div>
+
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div class="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center font-bold text-xl text-purple-400 mb-4">✉</div>
+            <h3 class="text-lg font-bold text-white mb-2">Resend API &amp; Cron</h3>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              Kurumsal domain imzalı transactional e-postalar (OTP, eskalasyon, durum bildirimleri) ve Vercel otomatik cron motoru.
+            </p>
+          </div>
+          <div class="mt-4 pt-4 border-t border-slate-800 text-xs font-mono text-purple-400">
+            E-Posta Servisi + 24h Cron
+          </div>
+        </div>
+      </div>
+      <div class="mt-6 glass-card p-4 rounded-xl flex items-center justify-between text-xs font-mono text-slate-400">
+        <span>Canlı URL: <a href="https://idari360.com" class="text-cyan-400 underline">https://idari360.com</a></span>
+        <span>Team: ios-saas-dev | Hosting: Vercel Production</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: ROL VE YETKİ SİSTEMİ -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="4">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Erişim Güvenliği</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">5 Kademeli Rol ve Tesis İzolasyon Hiyerarşisi</h2>
+      </div>
+      <div class="space-y-3 flex-1 flex flex-col justify-center">
+        <div class="glass p-4 rounded-xl flex items-center justify-between border-l-4 border-red-500">
+          <div class="flex items-center gap-4">
+            <span class="px-2.5 py-1 rounded bg-red-500/20 text-red-300 text-xs font-bold font-mono">super_admin</span>
+            <div>
+              <div class="text-sm font-bold text-white">Süper Admin</div>
+              <div class="text-xs text-slate-400">Tüm şirketleri, tesisleri, kullanıcıları ve sistem loglarını yöneten ana yönetici.</div>
+            </div>
+          </div>
+          <span class="badge bg-red-500/10 text-red-400 border border-red-500/20">Global Erişim</span>
+        </div>
+
+        <div class="glass p-4 rounded-xl flex items-center justify-between border-l-4 border-amber-500">
+          <div class="flex items-center gap-4">
+            <span class="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 text-xs font-bold font-mono">company_admin</span>
+            <div>
+              <div class="text-sm font-bold text-white">Şirket Yöneticisi</div>
+              <div class="text-xs text-slate-400">Kendi şirketine ait tüm şubeleri, konsolide KPI raporlarını ve personeli görüntüler.</div>
+            </div>
+          </div>
+          <span class="badge bg-amber-500/10 text-amber-400 border border-amber-500/20">Şirket Geneli</span>
+        </div>
+
+        <div class="glass p-4 rounded-xl flex items-center justify-between border-l-4 border-brand-500">
+          <div class="flex items-center gap-4">
+            <span class="px-2.5 py-1 rounded bg-brand-500/20 text-brand-300 text-xs font-bold font-mono">facility_manager</span>
+            <div>
+              <div class="text-sm font-bold text-white">Tesis Müdürü (Çözücü Rolü)</div>
+              <div class="text-xs text-slate-400">Sorumlu olduğu tesisin taleplerini karşılar, üzerine alır, çözer/reddeder, raporlarını görür.</div>
+            </div>
+          </div>
+          <span class="badge bg-brand-500/10 text-brand-400 border border-brand-500/20">Tesis İçi</span>
+        </div>
+
+        <div class="glass p-4 rounded-xl flex items-center justify-between border-l-4 border-cyan-500">
+          <div class="flex items-center gap-4">
+            <span class="px-2.5 py-1 rounded bg-cyan-500/20 text-cyan-300 text-xs font-bold font-mono">facility_officer</span>
+            <div>
+              <div class="text-sm font-bold text-white">Tesis Sorumlusu (Çözücü Rolü)</div>
+              <div class="text-xs text-slate-400">Operasyonel tesis personeli; sahadaki talepleri üzerine alır ve çözüm notuyla sonlandırır.</div>
+            </div>
+          </div>
+          <span class="badge bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Tesis İçi</span>
+        </div>
+
+        <div class="glass p-4 rounded-xl flex items-center justify-between border-l-4 border-slate-500">
+          <div class="flex items-center gap-4">
+            <span class="px-2.5 py-1 rounded bg-slate-500/20 text-slate-300 text-xs font-bold font-mono">employee</span>
+            <div>
+              <div class="text-sm font-bold text-white">Talep Açan (Şube / Saha Personeli)</div>
+              <div class="text-xs text-slate-400">Sadece kendi oluşturduğu talepleri ve zimmetindeki varlıkları izleyebilir.</div>
+            </div>
+          </div>
+          <span class="badge bg-slate-500/10 text-slate-300 border border-slate-500/20">Kişisel Erişim</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: TALEP İŞ AKIŞI (T1-T2-T3) -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="5">
+      <div class="mb-4">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Zaman Damgalı İş Akışı</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">Adım Adım Talep ve Karşılama Döngüsü</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 flex-1 items-center">
+        <!-- ADIM 1 -->
+        <div class="glass p-6 rounded-2xl relative border-t-4 border-blue-500">
+          <div class="text-xs font-bold text-blue-400 mb-2">ADIM 1 · T1 KAYDI</div>
+          <h3 class="text-lg font-bold text-white mb-2">Talebin Açılması</h3>
+          <p class="text-xs text-slate-300 mb-4 leading-relaxed">
+            Personel kategori seçer, açıklama yazar, fotoğraf yükler. Sistemde talep <strong>yeni</strong> statüsünde havuza düşer.
+          </p>
+          <div class="p-3 bg-blue-950/40 border border-blue-500/20 rounded-lg text-xs space-y-1">
+            <div class="text-blue-300 font-semibold">T1 = Açılış Zamanı (10:00)</div>
+            <div class="text-slate-400 text-[11px]">Tüm tesis yetkililerine anlık bildirim + e-posta gider.</div>
+          </div>
+        </div>
+
+        <!-- ADIM 2 -->
+        <div class="glass p-6 rounded-2xl relative border-t-4 border-amber-500">
+          <div class="text-xs font-bold text-amber-400 mb-2">ADIM 2 · T2 KAYDI</div>
+          <h3 class="text-lg font-bold text-white mb-2">Talebi Üzerine Alma</h3>
+          <p class="text-xs text-slate-300 mb-4 leading-relaxed">
+            Yetkili talebi inceler ve <strong>"Üzerime Al"</strong> butonuna basar. Talep o kişiye kilitlenir (statü: <strong>islemde</strong>).
+          </p>
+          <div class="p-3 bg-amber-950/40 border border-amber-500/20 rounded-lg text-xs space-y-1">
+            <div class="text-amber-300 font-semibold">T2 = Karşılama Zamanı (10:30)</div>
+            <div class="text-slate-400 text-[11px]">Talep sahibine: "X talebinizi işleme aldı" bildirimi.</div>
+          </div>
+        </div>
+
+        <!-- ADIM 3 -->
+        <div class="glass p-6 rounded-2xl relative border-t-4 border-emerald-500">
+          <div class="text-xs font-bold text-emerald-400 mb-2">ADIM 3 · T3 KAYDI</div>
+          <h3 class="text-lg font-bold text-white mb-2">Sonuçlandırma</h3>
+          <p class="text-xs text-slate-300 mb-4 leading-relaxed">
+            Sorumlu <strong>"Çözüldü"</strong> veya <strong>"Reddet"</strong> seçer. Zorunlu açıklama pop-up'ı doldurulmadan işlem yapılamaz.
+          </p>
+          <div class="p-3 bg-emerald-950/40 border border-emerald-500/20 rounded-lg text-xs space-y-1">
+            <div class="text-emerald-300 font-semibold">T3 = Kapanış Zamanı (14:00)</div>
+            <div class="text-slate-400 text-[11px]">Zorunlu not + opsiyonel kanıt görseli saklanır.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-xs text-center text-slate-400">
+        💡 <strong>Kritik Kural:</strong> Talebi sadece üzerine alan çözücü (veya üst yöneticiler) kapatabilir. Başka bir tesis sorumlusu müdahale edemez.
+      </div>
+    </section>
+
+    <!-- SLIDE 6: SÜRE ÖLÇÜMLEME & İKİLİ KARNE -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="6">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Performans Analitiği</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">İkili Karne Sistemi: Tesis vs. Sorumlu</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 items-stretch">
+        <div class="glass p-7 rounded-2xl border-cyan-500/30 flex flex-col justify-between">
+          <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-400 font-semibold text-xs mb-3">
+              🏢 TESİS KARNESİ (MÜDAHALE PERFORMANSI)
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-2">Karşılama Süresi = T2 − T1</h3>
+            <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+              Talebin oluşturulduğu andan herhangi bir yetkilinin "Üzerime Al" dediği ana kadar geçen süre tesisin genel karnesine yazılır.
+            </p>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between text-sm p-3 bg-slate-800/40 rounded-lg">
+                <span class="text-slate-300">Hedef Karşılama Süresi:</span>
+                <span class="font-bold text-emerald-400">≤ 60 Dakika</span>
+              </div>
+              <div class="flex items-center justify-between text-sm p-3 bg-slate-800/40 rounded-lg">
+                <span class="text-slate-300">Ölçülen Varlık:</span>
+                <span class="font-bold text-cyan-400">Şube / Lokasyon Reaksiyonu</span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-6 text-xs text-slate-400">
+            Hedef aşılırsa Dashboard'da kırmızı uyarı bayrağı düşer.
+          </div>
+        </div>
+
+        <div class="glass p-7 rounded-2xl border-purple-500/30 flex flex-col justify-between">
+          <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 font-semibold text-xs mb-3">
+              👤 SORUMLU KARNESİ (ÇÖZÜM PERFORMANSI)
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-2">İşlem Süresi = T3 − T2</h3>
+            <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+              Talebi kim üzerine aldıysa, o andan problemin "Çözüldü" olarak kapatıldığı ana kadar geçen süre bizzat o personelin karnesine yazılır.
+            </p>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between text-sm p-3 bg-slate-800/40 rounded-lg">
+                <span class="text-slate-300">Hedef Çözüm Süresi:</span>
+                <span class="font-bold text-emerald-400">≤ 4 Saat (240 Dk)</span>
+              </div>
+              <div class="flex items-center justify-between text-sm p-3 bg-slate-800/40 rounded-lg">
+                <span class="text-slate-300">Ölçülen Varlık:</span>
+                <span class="font-bold text-purple-400">Bireysel Çözücü Yetkinliği</span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-6 text-xs text-slate-400">
+            Kimin ne kadar iş bitirdiği ve ortalama hız puanı net listelenir.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: 24 SAAT ESKALASYON -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="7">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Otomatik Hatırlatma Motoru</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">24 Saat Kuralı &amp; Akıllı Eskalasyon</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 items-center">
+        <!-- ESKALASYON 1 -->
+        <div class="glass p-7 rounded-2xl border-red-500/30 bg-gradient-to-br from-red-950/20 to-transparent">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 rounded-xl bg-red-500/20 text-red-400 flex items-center justify-center font-bold">1</span>
+            <div>
+              <div class="text-xs text-red-400 font-bold uppercase">SEVİYE 1 ALARM</div>
+              <h3 class="text-lg font-bold text-white">Karşılanmayan Talep</h3>
+            </div>
+          </div>
+          <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+            Talep oluşturulduktan sonra <strong>24 saat boyunca</strong> hiçbir yetkili tarafından "Üzerime Al" denilmemişse:
+          </p>
+          <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+            <div class="flex items-center gap-2 text-red-400 font-semibold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              Tesisin TÜM yetkililerine e-posta gider
+            </div>
+            <p class="text-slate-400">Her 24 saatte bir çözücü atanana kadar otomatik hatırlatma yinelenir.</p>
+          </div>
+        </div>
+
+        <!-- ESKALASYON 2 -->
+        <div class="glass p-7 rounded-2xl border-amber-500/30 bg-gradient-to-br from-amber-950/20 to-transparent">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">2</span>
+            <div>
+              <div class="text-xs text-amber-400 font-bold uppercase">SEVİYE 2 HATIRLATMA</div>
+              <h3 class="text-lg font-bold text-white">Kapatılmayan Talep</h3>
+            </div>
+          </div>
+          <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+            Yetkili talebi üzerine aldıktan sonra <strong>24 saat boyunca</strong> "Çözüldü" veya "Reddedildi" yapılmamışsa:
+          </p>
+          <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+            <div class="flex items-center gap-2 text-amber-400 font-semibold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Talebi ÜZERİNE ALAN kişiye doğrudan e-posta gider
+            </div>
+            <p class="text-slate-400">"Talebi üzerinize aldınız, lütfen sonuçlandırınız" uyarısı iletilir.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 p-3 glass-card rounded-xl text-center text-xs text-slate-400">
+        Vercel Serverless Cron motoru her sabah 09:00'da arka planda tüm kuyruğu tarar.
+      </div>
+    </section>
+
+    <!-- SLIDE 8: 12 ENTEGRE MODÜL -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="8">
+      <div class="mb-5">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Uçtan Uca Fonksiyonellik</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">12 Entegre Modülün Ekosistemi</h2>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5 flex-1">
+        <div class="glass p-3.5 rounded-xl border-l-2 border-brand-500">
+          <div class="text-brand-400 font-bold text-sm mb-1">📋 Talep &amp; Onay</div>
+          <div class="text-[11px] text-slate-400">T1-T2-T3 iş akışı, SLA, atama havuzu.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-amber-500">
+          <div class="text-amber-400 font-bold text-sm mb-1">⚡ Aksiyon Takibi</div>
+          <div class="text-[11px] text-slate-400">Termin tarihli görevler, gecikme alarmları.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-emerald-500">
+          <div class="text-emerald-400 font-bold text-sm mb-1">🔍 Denetim Sistemi</div>
+          <div class="text-[11px] text-slate-400">Soru bankası, dijital puanlama, fotoğraflar.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-orange-500">
+          <div class="text-orange-400 font-bold text-sm mb-1">🍽️ Yemekhane</div>
+          <div class="text-[11px] text-slate-400">Aylık menü, kalori, porsiyon, tedarikçi.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-cyan-500">
+          <div class="text-cyan-400 font-bold text-sm mb-1">🧹 Temizlik</div>
+          <div class="text-[11px] text-slate-400">Personel planı, makine/ekipman envanteri.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-blue-500">
+          <div class="text-blue-400 font-bold text-sm mb-1">🚌 Servis &amp; Ulaşım</div>
+          <div class="text-[11px] text-slate-400">Güzergahlar, şoför belgeleri, vardiya.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-indigo-500">
+          <div class="text-indigo-400 font-bold text-sm mb-1">🚗 Filo Yönetimi</div>
+          <div class="text-[11px] text-slate-400">Şirket araçları, bakım günleri, kaza takibi.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-purple-500">
+          <div class="text-purple-400 font-bold text-sm mb-1">📦 Varlık / Zimmet</div>
+          <div class="text-[11px] text-slate-400">QR kod, devir/iade geçmişi, demirbaşlar.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-rose-500">
+          <div class="text-rose-400 font-bold text-sm mb-1">🤝 Tedarikçi Karnesi</div>
+          <div class="text-[11px] text-slate-400">Hizmet kalitesi, kontrat ve SLA puanı.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-teal-500">
+          <div class="text-teal-400 font-bold text-sm mb-1">📢 Duyurular</div>
+          <div class="text-[11px] text-slate-400">Tesis ve rol bazlı şirket içi yayınlar.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-lime-500">
+          <div class="text-lime-400 font-bold text-sm mb-1">📈 Raporlama</div>
+          <div class="text-[11px] text-slate-400">Tesis ve sorumlu karneleri, donut/bar grafik.</div>
+        </div>
+        <div class="glass p-3.5 rounded-xl border-l-2 border-pink-500">
+          <div class="text-pink-400 font-bold text-sm mb-1">⚙️ Yönetim Paneli</div>
+          <div class="text-[11px] text-slate-400">Kullanıcı, şirket, tesis &amp; güvenlik logları.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: RAPORLAMA VE DASHBOARD -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="9">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Yönetici Görünümü</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">Gerçek Zamanlı Karar Destek Ekranları</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 flex-1">
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div class="text-xs font-bold text-cyan-400 mb-2">MODÜL A</div>
+            <h3 class="text-lg font-bold text-white mb-2">KPI Özet Kartları</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Toplam talep, çözülen, reddedilen, ortalama karşılama ve çözüm süreleri tek bakışta. Hedef altı yeşil, hedef aşımı anında kırmızı uyarı verir.
+            </p>
+          </div>
+          <div class="p-3 bg-slate-900/80 rounded-lg text-xs space-y-1 font-mono">
+            <div class="text-emerald-400">✓ Ort. Karşılama: 42 Dk (Hedef: 60)</div>
+            <div class="text-emerald-400">✓ Ort. Çözüm: 2s 15dk (Hedef: 4s)</div>
+          </div>
+        </div>
+
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div class="text-xs font-bold text-brand-400 mb-2">MODÜL B</div>
+            <h3 class="text-lg font-bold text-white mb-2">Görsel Grafikler</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              <strong>Donut Chart:</strong> Talep durum dağılımı (Çözüldü/İşlemde/Red).<br>
+              <strong>Bar Chart:</strong> Tesislerin müdahale ve çözüm süreleri kıyası.<br>
+              <strong>Kategori Analizi:</strong> Hangi alanda problem yoğunlaşıyor.
+            </p>
+          </div>
+          <div class="p-3 bg-slate-900/80 rounded-lg text-xs font-mono text-cyan-300">
+            Kategori lideri: Teknik (%38), Yemekhane (%24)
+          </div>
+        </div>
+
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <div class="text-xs font-bold text-purple-400 mb-2">MODÜL C</div>
+            <h3 class="text-lg font-bold text-white mb-2">Sekmeli Karne Tabları</h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              <strong>Sekme 1: Tesis Karnesi</strong> — Her tesisin T2-T1 reaksiyon hızı sıralaması.<br>
+              <strong>Sekme 2: Sorumlu Karnesi</strong> — Her çözücünün T3-T2 iş bitirme performansı.
+            </p>
+          </div>
+          <div class="p-3 bg-slate-900/80 rounded-lg text-xs font-mono text-purple-300">
+            Adil, şeffaf ve ölçülebilir performans yönetimi.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: E-POSTA VE RESEND ALTYAPISI -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="10">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">İletişim &amp; Otomasyon</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">Resend Kurumsal E-Posta Ekosistemi</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
+        <div class="glass p-6 rounded-2xl space-y-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+            8 Farklı Otomatik E-Posta Senaryosu
+          </h3>
+          <div class="space-y-2 text-xs">
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">1. Kullanıcı Kayıt &amp; OTP Doğrulama</span>
+              <span class="text-cyan-400 font-mono">6 Haneli Kod</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">2. Şifremi Unuttum &amp; Sıfırlama</span>
+              <span class="text-cyan-400 font-mono">Güvenli Link</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">3. Yeni Talep Tesis Yetkililerine Bildirim</span>
+              <span class="text-cyan-400 font-mono">Anlık Havuz</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">4. Talebi Üzerine Alma (Karşılama)</span>
+              <span class="text-cyan-400 font-mono">Talep Sahibine</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">5. Çözüm Bildirimi &amp; Çözüm Notu</span>
+              <span class="text-cyan-400 font-mono">Talep Sahibine</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">6. Ret Bildirimi &amp; Gerekçe</span>
+              <span class="text-cyan-400 font-mono">Talep Sahibine</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">7. 24 Saat Karşılanmadı Eskalasyonu</span>
+              <span class="text-red-400 font-mono">Tüm Yetkililere</span>
+            </div>
+            <div class="p-2.5 bg-slate-800/40 rounded-lg flex items-center justify-between">
+              <span class="text-slate-300">8. 24 Saat Kapatılmadı Hatırlatması</span>
+              <span class="text-amber-400 font-mono">Sorumlu Kişiye</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white mb-3">Güvenli Gönderim Mimarisi</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-4">
+              API key'leri Vercel ortam değişkenlerinde şifreli olarak saklanır (Production env). Resend servis kesintisi yaşanırsa otomatik Nodemailer SMTP fallback devreye girer.
+            </p>
+            <div class="p-4 bg-navy-950/70 border border-slate-800 rounded-xl space-y-2 text-xs font-mono">
+              <div class="text-slate-400">From: <span class="text-emerald-400">İdari360 Bildirim &lt;bildirim@idari360.com&gt;</span></div>
+              <div class="text-slate-400">Provider: <span class="text-cyan-400">Resend REST API v1</span></div>
+              <div class="text-slate-400">Security: <span class="text-purple-400">DKIM / SPF / DMARC Doğrulanmış</span></div>
+            </div>
+          </div>
+          <div class="p-3 bg-brand-500/10 border border-brand-500/20 rounded-xl text-xs text-brand-300">
+            Gelen kutusuna düşme garantili kurumsal e-posta tasarımı.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11: KURUMSAL GÜVENLİK -->
+    <section class="slide flex-col max-w-6xl w-full mx-auto" data-slide="11">
+      <div class="mb-6">
+        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400">Kurumsal Standart</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-1">Çok Katmanlı Güvenlik Mimarisi</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
+        <div class="glass p-5 rounded-xl border-t-2 border-cyan-400">
+          <div class="text-cyan-400 font-bold text-sm mb-2">1. Domain Eşleme</div>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Public e-posta sağlayıcıları (gmail, yahoo, hotmail) kayıt olamaz. Yalnızca sisteme kayıtlı kurumsal domainler eşleştirilir.
+          </p>
+        </div>
+
+        <div class="glass p-5 rounded-xl border-t-2 border-brand-500">
+          <div class="text-brand-400 font-bold text-sm mb-2">2. Supabase RLS</div>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            PostgreSQL seviyesinde Row Level Security. API açığı olsa bile bir şirketin veritabanı satırını diğer şirket asla sorgulayamaz.
+          </p>
+        </div>
+
+        <div class="glass p-5 rounded-xl border-t-2 border-emerald-500">
+          <div class="text-emerald-400 font-bold text-sm mb-2">3. No Self-Promotion</div>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Veritabanı triggerları ile kullanıcıların kendi rollerini veya eşit/üst roller atamasını engelleyen katı kural seti.
+          </p>
+        </div>
+
+        <div class="glass p-5 rounded-xl border-t-2 border-purple-500">
+          <div class="text-purple-400 font-bold text-sm mb-2">4. Aktivite Denetimi</div>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Tüm durum değişiklikleri, rol güncellemeleri ve kritik işlemler IP adresi ve zaman damgasıyla loglanır.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-6 p-4 glass-card rounded-xl flex items-center justify-between text-xs text-slate-300">
+        <span>🛡️ <strong>Penetrasyon Testi Uyumlu:</strong> BOLA, IDOR ve Privilege Escalation saldırılarına karşı tam korumalı.</span>
+      </div>
+    </section>
+
+    <!-- SLIDE 12: SONUÇ & DEMO AKIŞI -->
+    <section class="slide flex-col items-center justify-center text-center max-w-5xl w-full mx-auto" data-slide="12">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-6">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        Canlıda Çalışan Prodüksiyon Sistemi
+      </div>
+
+      <h2 class="text-3xl sm:text-5xl font-extrabold text-white mb-6">
+        İdari İşlemlerinizde<br>
+        <span class="bg-gradient-to-r from-cyan-400 via-brand-500 to-indigo-400 bg-clip-text text-transparent">360 Derece Hakimiyet</span>
+      </h2>
+
+      <p class="text-slate-300 max-w-xl mb-8 text-sm sm:text-base leading-relaxed">
+        İdari360; dağınık şubelerinizi, çalışan taleplerinizi ve operasyonel maliyetlerinizi tek bir merkezden kusursuz yönetmeniz için hazır.
+      </p>
+
+      <div class="flex flex-wrap items-center justify-center gap-4 mb-10">
+        <a href="https://idari360.com" target="_blank" class="px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-sm shadow-xl shadow-brand-600/30 transition flex items-center gap-2">
+          <span>Canlı Sistemi Aç (idari360.com)</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+        </a>
+        <a href="https://idari360.com/auth/login" target="_blank" class="px-6 py-3 rounded-xl glass hover:bg-slate-800/60 text-slate-200 font-semibold text-sm transition">
+          Giriş Yap &amp; Demo
+        </a>
+      </div>
+
+      <div class="text-xs font-mono text-slate-400">
+        İdari360 Teknoloji A.Ş. · Tüm Hakları Saklıdır © 2026
+      </div>
+    </section>
+
+  </main>
+
+  <!-- BOTTOM FOOTER / CONTROLS -->
+  <footer class="h-16 px-8 flex items-center justify-between border-t border-slate-800/80 bg-navy-950/70 backdrop-blur z-20">
+    <div class="text-xs text-slate-400 flex items-center gap-2">
+      <span class="hidden sm:inline">Navigasyon:</span>
+      <kbd class="px-2 py-1 rounded bg-slate-800 text-[10px] font-mono border border-slate-700">← Sol</kbd>
+      <kbd class="px-2 py-1 rounded bg-slate-800 text-[10px] font-mono border border-slate-700">Sağ →</kbd>
+      <kbd class="hidden sm:inline-block px-2 py-1 rounded bg-slate-800 text-[10px] font-mono border border-slate-700">F (Tam Ekran)</kbd>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button id="prevBtn" onclick="prevSlide()" class="px-4 py-2 rounded-lg text-xs font-semibold glass hover:bg-slate-800 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        <span>Önceki</span>
+      </button>
+      <button id="nextBtn" onclick="nextSlide()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white transition flex items-center gap-1.5 shadow-md shadow-brand-600/20">
+        <span>Sonraki</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+  </footer>
+
+  <script>
+    let currentSlide = 1;
+    const totalSlides = 12;
+
+    function updateSlide() {
+      document.querySelectorAll('.slide').forEach((slide, idx) => {
+        if (idx + 1 === currentSlide) {
+          slide.classList.add('active');
+        } else {
+          slide.classList.remove('active');
+        }
+      });
+
+      // Update counters
+      document.getElementById('slideCounter').textContent = String(currentSlide).padStart(2, '0');
+      document.getElementById('totalSlides').textContent = String(totalSlides).padStart(2, '0');
+
+      // Update progress bar
+      const progressPercent = (currentSlide / totalSlides) * 100;
+      document.getElementById('progressBar').style.width = progressPercent + '%';
+
+      // Update buttons
+      document.getElementById('prevBtn').disabled = currentSlide === 1;
+      document.getElementById('nextBtn').disabled = currentSlide === totalSlides;
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides) {
+        currentSlide++;
+        updateSlide();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 1) {
+        currentSlide--;
+        updateSlide();
+      }
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.log(err));
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // Keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullScreen();
+      } else if (e.key === 'Home') {
+        currentSlide = 1;
+        updateSlide();
+      } else if (e.key === 'End') {
+        currentSlide = totalSlides;
+        updateSlide();
+      }
+    });
+
+    updateSlide();
+  </script>
+</body>
+</html>
