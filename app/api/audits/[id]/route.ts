@@ -54,7 +54,7 @@ export async function GET(
         due_date,
         photo_url,
         action_id,
-        action:actions(id, action_number, status, due_date)
+        action:actions!audit_answers_action_id_fkey(id, action_number, status, due_date)
       ),
       photos:audit_photos(
         id,
