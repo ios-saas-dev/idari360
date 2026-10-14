@@ -25,21 +25,24 @@ function VerifyContent() {
   useEffect(() => {
     if (emailParam) {
       setEmail(emailParam);
-      // Sayfa ilk yüklendiğinde OTP kodunu tetikle
-      fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailParam, purpose: 'email_verification' }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.dev_code) {
-            setDevCode(data.dev_code);
-          }
+      const isAlreadySent = searchParams.get('sent') === 'true';
+      // Sadece kayıt sayfasından henüz gönderilmediyse veya doğrudan gelindiyse tetikle
+      if (!isAlreadySent) {
+        fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailParam, purpose: 'email_verification' }),
         })
-        .catch(() => {});
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.dev_code) {
+              setDevCode(data.dev_code);
+            }
+          })
+          .catch(() => {});
+      }
     }
-  }, [emailParam]);
+  }, [emailParam, searchParams]);
 
   // Geri sayım sayacı (120 saniye)
   useEffect(() => {

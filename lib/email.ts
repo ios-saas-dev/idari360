@@ -30,7 +30,7 @@ async function sendEmail({
   html: string;
 }): Promise<BaseEmailResponse> {
   const recipientList = Array.isArray(to) ? to : [to];
-  const fromEmail = process.env.EMAIL_FROM || 'İdari360 <onboarding@resend.dev>';
+  const fromEmail = process.env.EMAIL_FROM || 'İdari360 <bildirim@idari360.com>';
 
   // 1. Primary: Resend API
   const resend = getResendClient();

@@ -110,48 +110,35 @@ export default function RegisterPage() {
 
     try {
       setLoading(true);
-      const supabase = createBrowserClient();
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
-        password,
-        options: {
-          emailRedirectTo: `${typeof window !== 'undefined' ? window.location.origin : 'https://idari360.vercel.app'}/auth/callback`,
-          data: {
-            full_name: fullName.trim(),
-            phone: phone.trim() || null,
-          },
-        },
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          phone: phone.trim() || null,
+          password,
+        }),
       });
 
-      if (signUpError) {
-        // Veritabanı triggerından dönen Seçenek B hata mesajını göster
-        setError(signUpError.message || 'Kayıt olunurken bir hata oluştu.');
-        return;
-      }
+      const result = await res.json();
 
-      if (data.user) {
-        // Kullanıcı zaten kayıtlı mı kontrolü (Supabase güvenliği gereği hata yerine boş identities döner)
-        if (data.user.identities && data.user.identities.length === 0) {
-          setError('Bu e-posta adresi ile zaten kayıtlı bir hesap bulunmaktadır. Giriş sayfasına yönlendiriliyorsunuz...');
+      if (!res.ok || !result.success) {
+        if (result.alreadyRegistered) {
+          setError(result.message || 'Bu e-posta adresi ile zaten kayıtlı bir hesap bulunmaktadır. Giriş sayfasına yönlendiriliyorsunuz...');
           setTimeout(() => {
             router.push(`/auth/login?email=${encodeURIComponent(email.trim().toLowerCase())}`);
           }, 1800);
           return;
         }
-
-        // Yeni kullanıcı için OTP kodu oluşturmak üzere backend API'yi tetikle
-        await fetch('/api/auth/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: email.trim().toLowerCase(),
-            purpose: 'email_verification',
-          }),
-        });
-
-        router.push(`/auth/verify?email=${encodeURIComponent(email.trim().toLowerCase())}`);
+        setError(result.message || 'Kayıt olunurken bir hata oluştu.');
+        return;
       }
+
+      // Başarılı: Kullanıcıya sadece Resend üzerinden 6 haneli kod e-postası gitti.
+      // Doğrulama sayfasına yönlendir (sent=true ile çift OTP gönderilmesini engelle)
+      router.push(`/auth/verify?email=${encodeURIComponent(email.trim().toLowerCase())}&sent=true`);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
