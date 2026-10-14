@@ -324,10 +324,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4. ALT BÖLÜM: DUYURULAR, KATEGORİ DAĞILIMI VE MEMNUNİYET SKORU */}
+      {/* 4. ALT BÖLÜM: DUYURULAR VE KATEGORİ DAĞILIMI */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Sol: Duyurular (4 Kolon) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        {/* Sol: Duyurular (6 Kolon) */}
+        <div className="lg:col-span-6 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -392,8 +392,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Orta: En Çok Talep Oluşturulan Kategoriler (4 Kolon) */}
-        <div className="lg:col-span-4 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+        {/* Sağ: En Çok Talep Oluşturulan Kategoriler (6 Kolon) */}
+        <div className="lg:col-span-6 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <h2 className="text-sm font-bold text-slate-800 mb-4">En Çok Talep Oluşturulan Kategoriler</h2>
 
           <div className="space-y-3.5 my-auto">
@@ -408,42 +408,6 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* Sağ: Memnuniyet Skoru (3 Kolon) */}
-        <div className="lg:col-span-3 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm text-center flex flex-col justify-between items-center">
-          <h2 className="text-sm font-bold text-slate-800 self-start">Memnuniyet Skoru</h2>
-
-          <div className="relative w-36 h-36 flex items-center justify-center my-2">
-            {/* SVG Daire Göstergesi */}
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" fill="transparent" stroke="#e2e8f0" strokeWidth="8" />
-              {/* 4.6 / 5 = %92 doluluk (251.2 * 0.92 = 231) */}
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="transparent"
-                stroke="#10b981"
-                strokeWidth="8"
-                strokeDasharray="251.2"
-                strokeDashoffset="25"
-                strokeLinecap="round"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-slate-900 leading-none">4.6</span>
-              <span className="text-xs font-semibold text-slate-400 mt-0.5">/5</span>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-bold text-slate-700">Yemekhane Memnuniyet Skoru</p>
-            <div className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-              <TrendingUp className="w-3 h-3" />
-              <span>%8.2 artış (Geçen aya göre)</span>
-            </div>
           </div>
         </div>
       </div>

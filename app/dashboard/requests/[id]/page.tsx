@@ -388,6 +388,11 @@ export default function RequestDetailPage({
 
   const canTakeAction = isManagerOrAdmin && isFacilityAuthorized;
 
+  // Sorumlu / Yetkili kontrolü (Atanan kişi veya idari yönetici/yetkili)
+  const isResponsible = isManagerOrAdmin || (Boolean(requestData?.assigned_to) && requestData?.assigned_to === currentUser?.id);
+  const isFulfilled = requestData ? requestData.status !== 'yeni' : false;
+  const hideCommentsForRequester = isFulfilled && !isResponsible;
+
   // Hesaplanan SLA Süreleri
   const t1Date = requestData?.created_at ? new Date(requestData.created_at) : null;
   const t2Date = requestData?.assigned_at ? new Date(requestData.assigned_at) : null;
@@ -666,68 +671,94 @@ export default function RequestDetailPage({
           </div>
 
           {/* Yorumlar Bölümü */}
-          <div className="bg-white rounded-2xl p-6 sm:p-7 border border-slate-200/80 shadow-sm space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-blue-600" />
-                <span>Yorumlar & Mesajlaşma</span>
-                <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                  {requestData.request_comments?.length || 0}
-                </span>
-              </h2>
+          {hideCommentsForRequester ? (
+            <div className="bg-white rounded-2xl p-6 sm:p-7 border border-slate-200/80 shadow-sm space-y-4">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-slate-400" />
+                <h2 className="text-base font-bold text-slate-700">Yorumlar & İç Yazışmalar</h2>
+              </div>
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-blue-50 text-blue-600 mt-0.5">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-800">Sorumlular Arası Özel İletişim</p>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Talebiniz karşılanmış ve operasyonel işleme alınmıştır. Çözüm sürecine ilişkin teknik ve operasyonel değerlendirmeler yalnızca ilgili sorumlular ve yöneticiler arasında yürütülmektedir.
+                  </p>
+                </div>
+              </div>
             </div>
+          ) : (
+            <div className="bg-white rounded-2xl p-6 sm:p-7 border border-slate-200/80 shadow-sm space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-blue-600" />
+                  <span>Yorumlar & Mesajlaşma</span>
+                  <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                    {requestData.request_comments?.length || 0}
+                  </span>
+                </h2>
+                {isFulfilled && isResponsible && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2.5 py-0.5 rounded-full">
+                    <ShieldAlert className="w-3 h-3 text-indigo-600" />
+                    Yalnızca Sorumlulara Özel
+                  </span>
+                )}
+              </div>
 
-            {/* Yorum Listesi */}
-            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-              {requestData.request_comments && requestData.request_comments.length > 0 ? (
-                requestData.request_comments.map((c) => (
-                  <div key={c.id} className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold">
-                          {getInitials(c.user?.full_name)}
+              {/* Yorum Listesi */}
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {requestData.request_comments && requestData.request_comments.length > 0 ? (
+                  requestData.request_comments.map((c) => (
+                    <div key={c.id} className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold">
+                            {getInitials(c.user?.full_name)}
+                          </div>
+                          <span className="text-xs font-bold text-slate-800">
+                            {c.user?.full_name || 'Kullanıcı'}
+                          </span>
                         </div>
-                        <span className="text-xs font-bold text-slate-800">
-                          {c.user?.full_name || 'Kullanıcı'}
+                        <span className="text-[11px] text-slate-400">
+                          {formatDate(c.created_at)}
                         </span>
                       </div>
-                      <span className="text-[11px] text-slate-400">
-                        {formatDate(c.created_at)}
-                      </span>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap pl-8">
+                        {c.comment}
+                      </p>
                     </div>
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap pl-8">
-                      {c.comment}
-                    </p>
+                  ))
+                ) : (
+                  <div className="text-center py-6 text-slate-400 text-xs">
+                    Henüz yorum yapılmamış.
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-6 text-slate-400 text-xs">
-                  Henüz yorum yapılmamış.
-                </div>
-              )}
-            </div>
-
-            {/* Yeni Yorum Ekleme Formu */}
-            <form onSubmit={handleCommentSubmit} className="space-y-2 pt-2 border-t border-slate-100">
-              <textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Bu talep ile ilgili bir yorum veya soru yazın..."
-                rows={2}
-                className="w-full text-sm rounded-xl border border-slate-200 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
-              />
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={!newComment.trim() || commentLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-                >
-                  {commentLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                  <span>Yorum Gönder</span>
-                </button>
+                )}
               </div>
-            </form>
-          </div>
+
+              {/* Yeni Yorum Ekleme Formu */}
+              <form onSubmit={handleCommentSubmit} className="space-y-2 pt-2 border-t border-slate-100">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Bu talep ile ilgili bir yorum veya soru yazın..."
+                  rows={2}
+                  className="w-full text-sm rounded-xl border border-slate-200 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={!newComment.trim() || commentLoading}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                  >
+                    {commentLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    <span>Yorum Gönder</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
 
         {/* ================= SAĞ KOLON (lg:col-span-4) ================= */}
@@ -838,7 +869,7 @@ export default function RequestDetailPage({
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                 <Clock className="w-4 h-4 text-blue-600" />
-                <span>SLA & Zaman Damgaları</span>
+                <span>Talep Akışı</span>
               </h2>
             </div>
 

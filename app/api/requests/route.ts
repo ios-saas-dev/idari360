@@ -89,9 +89,23 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { title, description, category, priority, assigned_to, attachment_urls, facility_id, company_id } = body;
 
-  if (!title || !description || !category) {
-    return NextResponse.json({ error: 'Lütfen başlık, açıklama ve kategori alanlarını doldurunuz.' }, { status: 400 });
+  if (!description || !category) {
+    return NextResponse.json({ error: 'Lütfen açıklama ve kategori alanlarını doldurunuz.' }, { status: 400 });
   }
+
+  // Otomatik başlık üretimi (kullanıcıdan başlık istenmediği durumlarda)
+  const categoryLabels: Record<string, string> = {
+    yemekhane: 'Yemekhane',
+    servis: 'Servis',
+    temizlik: 'Temizlik',
+    filo: 'Filo',
+    varlik: 'Varlık',
+    teknik: 'Teknik',
+    diger: 'Diğer',
+  };
+  const catLabel = categoryLabels[category] || category;
+  const descSnippet = description.trim().split('\n')[0].slice(0, 60);
+  const effectiveTitle = title?.trim() || `${catLabel} - ${descSnippet}`;
 
   // Determine target facility and company
   let targetFacilityId = facility_id || profile.facility_id;
@@ -152,7 +166,7 @@ export async function POST(request: NextRequest) {
       company_id: targetCompanyId,
       facility_id: targetFacilityId,
       request_number,
-      title: title.trim(),
+      title: effectiveTitle,
       description: description.trim(),
       category,
       priority: priority || 'orta',

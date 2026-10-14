@@ -6,8 +6,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  
   const { id } = await params;
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, role')
+    .eq('id', user.id)
+    .single();
 
   const { data, error } = await supabase
     .from('requests')
@@ -24,6 +29,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
+
+  // İş Kuralı: Açılan talepler karşılandığında talep hakkında olan yorum ve konuşmalar
+  // yalnızca sorumlular arasında görünür olsun. Talebi açan kişi bu konuşmaları göremesin.
+  const isResponsible =
+    ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(profile?.role || '') ||
+    data.assigned_to === user.id;
+
+  const isFulfilled = data.status !== 'yeni';
+
+  if (isFulfilled && !isResponsible) {
+    data.request_comments = [];
+  }
+
   return NextResponse.json({ data });
 }
 

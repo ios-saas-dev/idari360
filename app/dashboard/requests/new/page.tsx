@@ -41,7 +41,6 @@ export default function NewRequestPage() {
   const supabase = createBrowserClient();
 
   // Form states
-  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('yemekhane');
   const [priority, setPriority] = useState('orta');
@@ -100,16 +99,13 @@ export default function NewRequestPage() {
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!title.trim()) {
-      newErrors.title = 'Talep başlığı zorunludur.';
+    if (!category) {
+      newErrors.category = 'Lütfen bir kategori seçin.';
     }
     if (!description.trim()) {
       newErrors.description = 'Talep açıklaması zorunludur.';
     } else if (description.trim().length < 10) {
       newErrors.description = 'Açıklama en az 10 karakter olmalıdır.';
-    }
-    if (!category) {
-      newErrors.category = 'Lütfen bir kategori seçin.';
     }
     if (!priority) {
       newErrors.priority = 'Lütfen bir öncelik seçin.';
@@ -139,11 +135,16 @@ export default function NewRequestPage() {
 
     setSubmitting(true);
     try {
+      const catObj = CATEGORIES.find((c) => c.value === category);
+      const catLabel = catObj ? catObj.label : 'Genel';
+      const descSnippet = description.trim().split('\n')[0].slice(0, 60);
+      const autoTitle = `${catLabel} - ${descSnippet}`;
+
       const response = await fetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: title.trim(),
+          title: autoTitle,
           description: description.trim(),
           category,
           priority,
@@ -211,101 +212,59 @@ export default function NewRequestPage() {
           </div>
 
           <div className="space-y-4">
-            {/* Tesis / Lokasyon Seçimi */}
-            {facilities.length > 0 && (
-              <div>
-                <label htmlFor="facility_id" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Tesis / Lokasyon <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <select
-                    id="facility_id"
-                    value={facilityId}
-                    onChange={(e) => setFacilityId(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  >
-                    {facilities.map((fac) => (
-                      <option key={fac.id} value={fac.id}>
-                        {fac.name} {fac.city ? `(${fac.city})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* Title */}
+            {/* 1. Kategori Seçimi (En Üstte) */}
             <div>
-              <label htmlFor="title" className="block text-sm font-medium text-slate-700 mb-1.5">
-                Başlık <span className="text-rose-500">*</span>
+              <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1.5">
+                Kategori <span className="text-rose-500">*</span>
               </label>
-              <input
-                id="title"
-                type="text"
-                placeholder="Örn: 2. Kat Toplantı Odası Klima Arızası"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+              <select
+                id="category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
                 className={`w-full px-3.5 py-2.5 text-sm bg-white border rounded-xl focus:outline-none focus:ring-2 transition-all ${
-                  errors.title
+                  errors.category
                     ? 'border-rose-300 focus:ring-rose-500/20 focus:border-rose-500'
                     : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'
                 }`}
-              />
-              {errors.title && (
-                <p className="text-xs text-rose-500 mt-1 font-medium">{errors.title}</p>
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </option>
+                ))}
+              </select>
+              {errors.category && (
+                <p className="text-xs text-rose-500 mt-1 font-medium">{errors.category}</p>
               )}
             </div>
 
-            {/* Description */}
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1.5">
-                Açıklama <span className="text-rose-500">*</span>
-              </label>
-              <textarea
-                id="description"
-                rows={5}
-                placeholder="Talebinizle ilgili tüm detayları, konum bilgisini ve gereksinimleri açıklayınız..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className={`w-full px-3.5 py-2.5 text-sm bg-white border rounded-xl focus:outline-none focus:ring-2 transition-all min-h-[120px] ${
-                  errors.description
-                    ? 'border-rose-300 focus:ring-rose-500/20 focus:border-rose-500'
-                    : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'
-                }`}
-              />
-              {errors.description && (
-                <p className="text-xs text-rose-500 mt-1 font-medium">{errors.description}</p>
+            {/* 2. Tesis / Lokasyon ve Öncelik Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Tesis / Lokasyon */}
+              {facilities.length > 0 && (
+                <div>
+                  <label htmlFor="facility_id" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Tesis / Lokasyon <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <select
+                      id="facility_id"
+                      value={facilityId}
+                      onChange={(e) => setFacilityId(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    >
+                      {facilities.map((fac) => (
+                        <option key={fac.id} value={fac.id}>
+                          {fac.name} {fac.city ? `(${fac.city})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               )}
-            </div>
 
-            {/* Category and Priority Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div>
-                <label htmlFor="category" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Kategori <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  id="category"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className={`w-full px-3.5 py-2.5 text-sm bg-white border rounded-xl focus:outline-none focus:ring-2 transition-all ${
-                    errors.category
-                      ? 'border-rose-300 focus:ring-rose-500/20 focus:border-rose-500'
-                      : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'
-                  }`}
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.label}
-                    </option>
-                  ))}
-                </select>
-                {errors.category && (
-                  <p className="text-xs text-rose-500 mt-1 font-medium">{errors.category}</p>
-                )}
-              </div>
-
+              {/* Öncelik Seviyesi */}
               <div>
                 <label htmlFor="priority" className="block text-sm font-medium text-slate-700 mb-1.5">
                   Öncelik Seviyesi <span className="text-rose-500">*</span>
@@ -330,6 +289,28 @@ export default function NewRequestPage() {
                   <p className="text-xs text-rose-500 mt-1 font-medium">{errors.priority}</p>
                 )}
               </div>
+            </div>
+
+            {/* 3. Talep Açıklaması */}
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-slate-700 mb-1.5">
+                Talep Açıklaması <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                id="description"
+                rows={5}
+                placeholder="Talebinizle ilgili tüm detayları, konum bilgisini ve gereksinimleri açıklayınız..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className={`w-full px-3.5 py-2.5 text-sm bg-white border rounded-xl focus:outline-none focus:ring-2 transition-all min-h-[120px] ${
+                  errors.description
+                    ? 'border-rose-300 focus:ring-rose-500/20 focus:border-rose-500'
+                    : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'
+                }`}
+              />
+              {errors.description && (
+                <p className="text-xs text-rose-500 mt-1 font-medium">{errors.description}</p>
+              )}
             </div>
           </div>
         </div>

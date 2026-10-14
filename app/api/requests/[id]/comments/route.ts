@@ -11,6 +11,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { comment } = body;
   if (!comment?.trim()) return NextResponse.json({ error: 'Yorum boş olamaz' }, { status: 400 });
 
+  // İlgili talebi ve kullanıcı rolünü kontrol et
+  const { data: currentReq } = await supabase
+    .from('requests')
+    .select('status, assigned_to, created_by')
+    .eq('id', id)
+    .single();
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  const isResponsible =
+    ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(profile?.role || '') ||
+    currentReq?.assigned_to === user.id;
+
+  if (currentReq && currentReq.status !== 'yeni' && !isResponsible) {
+    return NextResponse.json({
+      error: 'Talep karşılandıktan sonra iç yazışmalar yalnızca yetkili sorumlular arasında yürütülür.'
+    }, { status: 403 });
+  }
+
   const { data, error } = await supabase.from('request_comments').insert({
     request_id: id,
     user_id: user.id,
