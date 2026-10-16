@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Lock, Eye, EyeOff, ShieldCheck, Check, X, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -14,6 +15,28 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [linkStatus, setLinkStatus] = useState<'idle' | 'verifying' | 'invalid'>('idle');
+
+  // E-posta bağlantısındaki token_hash doğrulaması (özel Resend şifre sıfırlama akışı)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get('token_hash');
+    const type = params.get('type');
+
+    if (tokenHash && type === 'recovery') {
+      setLinkStatus('verifying');
+      // Token'ı adres çubuğundan temizle (tarayıcı geçmişinde kalmasın)
+      window.history.replaceState({}, '', '/auth/reset-password');
+
+      const supabase = createBrowserClient();
+      supabase.auth
+        .verifyOtp({ token_hash: tokenHash, type: 'recovery' })
+        .then(({ error: verifyError }) => {
+          setLinkStatus(verifyError ? 'invalid' : 'idle');
+        })
+        .catch(() => setLinkStatus('invalid'));
+    }
+  }, []);
 
   // Şifre gereksinim kontrolleri
   const hasMinLength = password.length >= 8;
@@ -74,7 +97,26 @@ export default function ResetPasswordPage() {
         </div>
       )}
 
-      {success ? (
+      {linkStatus === 'verifying' ? (
+        <div className="p-6 rounded-2xl bg-blue-50 border border-blue-200 text-blue-800 text-center space-y-3">
+          <Loader2 className="w-10 h-10 text-blue-600 mx-auto animate-spin" />
+          <p className="text-sm font-medium">Sıfırlama bağlantınız doğrulanıyor...</p>
+        </div>
+      ) : linkStatus === 'invalid' ? (
+        <div className="p-6 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-center space-y-3">
+          <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
+          <h2 className="text-lg font-bold">Bağlantı Geçersiz</h2>
+          <p className="text-sm">
+            Bu şifre sıfırlama bağlantısının süresi dolmuş veya bağlantı daha önce kullanılmış.
+          </p>
+          <Link
+            href="/auth/forgot-password"
+            className="inline-flex h-11 px-5 items-center justify-center rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-all"
+          >
+            Yeni Bağlantı İste
+          </Link>
+        </div>
+      ) : success ? (
         <div className="p-6 rounded-2xl bg-green-50 border border-green-200 text-green-800 text-center space-y-3">
           <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto" />
           <h2 className="text-lg font-bold">Şifreniz Başarıyla Güncellendi!</h2>

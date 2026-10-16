@@ -3,7 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, MailCheck } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
 function LoginFormContent() {
@@ -17,6 +17,7 @@ function LoginFormContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verifiedSuccess, setVerifiedSuccess] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState<string | null>(null);
 
   useEffect(() => {
     const verifiedParam = searchParams.get('verified');
@@ -32,6 +33,7 @@ function LoginFormContent() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setNeedsVerification(null);
 
     if (!email.trim() || !password) {
       setError('Lütfen e-posta adresinizi ve şifrenizi girin.');
@@ -53,6 +55,7 @@ function LoginFormContent() {
           setError('E-posta adresi veya şifre hatalı.');
         } else if (signInError.message.includes('Email not confirmed')) {
           setError('Lütfen e-posta adresinize gelen onay kodu ile hesabınızı doğrulayın.');
+          setNeedsVerification(email.trim().toLowerCase());
         } else {
           setError(signInError.message || 'Giriş yapılırken bir hata oluştu.');
         }
@@ -121,6 +124,17 @@ function LoginFormContent() {
           <AlertCircle className="w-5 h-5 flex-shrink-0" aria-hidden="true" />
           <p className="text-sm font-medium">{error}</p>
         </div>
+      )}
+
+      {/* Doğrulama Yönlendirmesi — hesap henüz onaylanmamışsa */}
+      {needsVerification && (
+        <Link
+          href={`/auth/verify?email=${encodeURIComponent(needsVerification)}`}
+          className="mb-6 flex items-center justify-center gap-2 w-full h-11 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-sm font-semibold transition-colors"
+        >
+          <MailCheck className="w-4 h-4" aria-hidden="true" />
+          Doğrulama Sayfasına Git (Yeni Kod Al)
+        </Link>
       )}
 
       {/* Form Alanı */}

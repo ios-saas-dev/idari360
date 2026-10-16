@@ -143,15 +143,26 @@ export async function POST(request: Request) {
       `[auth/register] OTP sent to ${cleanEmail} via ${emailResult.provider} (Success: ${emailResult.success})`
     );
 
+    // 5. Yedek kanal: Özel e-posta (Resend/SMTP) başarısız olursa Supabase native onay e-postasını tetikle
     if (!emailResult.success) {
-      console.warn('[auth/register] Resend email failed:', emailResult.error);
+      console.warn('[auth/register] Resend email failed, Supabase native yedek kanal deneniyor:', emailResult.error);
+      try {
+        await supabaseAdmin.auth.resend({ type: 'signup', email: cleanEmail });
+        console.log('[auth/register] Supabase native yedek kanal tetiklendi:', cleanEmail);
+      } catch (sbErr: any) {
+        // Sessiz hata — kullanıcı doğrulama sayfasından tekrar kod talep edebilir
+        console.warn('[auth/register] Supabase yedek kanal hatası:', sbErr?.message || sbErr);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Hesabınız oluşturuldu. 6 haneli güvenlik doğrulama kodu e-posta adresinize gönderildi.',
+      message: emailResult.success
+        ? 'Hesabınız oluşturuldu. 6 haneli güvenlik doğrulama kodu e-posta adresinize gönderildi.'
+        : 'Hesabınız oluşturuldu. Doğrulama e-postası gönderiminde sorun yaşandı; yönlendirileceğiniz doğrulama sayfasından kodu tekrar talep edebilirsiniz.',
       email: cleanEmail,
       userId,
+      emailSent: emailResult.success,
     });
   } catch (error: any) {
     console.error('[auth/register] Unexpected error:', error);
