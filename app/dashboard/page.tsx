@@ -8,7 +8,7 @@ import {
   ClipboardList,
   Hourglass,
   CheckCircle2,
-  Users,
+  XCircle,
   Plus,
   Bus,
   UtensilsCrossed,
@@ -26,9 +26,22 @@ import {
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
+interface RequestStatusSlice {
+  id: string;
+  label: string;
+  count: number;
+  percentage: number;
+  color: string;
+}
+
 export default function DashboardPage() {
   const [userName, setUserName] = useState('Yönetici');
   const [userRole, setUserRole] = useState<string>('');
+  const [requestStats, setRequestStats] = useState<{
+    totalRequests: number;
+    slices: RequestStatusSlice[];
+  } | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
     async function loadUser() {
@@ -57,6 +70,28 @@ export default function DashboardPage() {
       }
     }
     loadUser();
+  }, []);
+
+  // Talep durum dağılımı — Raporlar modülü ile aynı veri kaynağından beslenir
+  // (/api/reports/summary → donut_chart + kpi). Kartlar ve grafik aynı veriyi kullanır.
+  useEffect(() => {
+    async function loadRequestStats() {
+      try {
+        const res = await fetch('/api/reports/summary');
+        if (!res.ok) throw new Error('Talep özeti alınamadı');
+        const json = await res.json();
+        const summary = json?.data;
+        setRequestStats({
+          totalRequests: summary?.kpi?.total_requests ?? 0,
+          slices: Array.isArray(summary?.donut_chart) ? summary.donut_chart : [],
+        });
+      } catch (err) {
+        console.error('Talep durum dağılımı yüklenemedi:', err);
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+    loadRequestStats();
   }, []);
 
   // Hızlı işlemler listesi (Rol durumuna göre dinamik)
@@ -90,14 +125,33 @@ export default function DashboardPage() {
     { name: 'Ayarlar', icon: Settings, color: 'text-slate-600', href: '/dashboard/settings' },
   ];
 
-  // Donut grafik verileri
-  const donutData = [
-    { label: 'Yeni', count: 12, pct: '37.5', color: '#2563eb' },
-    { label: 'Devam Ediyor', count: 8, pct: '25.0', color: '#06b6d4' },
-    { label: 'Beklemede', count: 6, pct: '18.8', color: '#f59e0b' },
-    { label: 'Onayda', count: 3, pct: '9.4', color: '#8b5cf6' },
-    { label: 'Tamamlandı', count: 3, pct: '9.4', color: '#10b981' },
+  // Talep durum dağılımı — kartlar ve donut grafik aynı veriden beslenir
+  const statusSlices = requestStats?.slices ?? [];
+  const totalRequests = requestStats?.totalRequests ?? 0;
+
+  // Durum kartları (yeni grafiğin dilimleriyle bire bir eşleşir)
+  const statusCards = [
+    { id: 'yeni', title: 'Açık Talepler', icon: ClipboardList, tone: 'bg-blue-50 border-blue-100 text-blue-600' },
+    { id: 'islemde', title: 'Devam Eden Talepler', icon: Hourglass, tone: 'bg-amber-50 border-amber-100 text-amber-500' },
+    { id: 'cozumlendi', title: 'Çözümlenen Talepler', icon: CheckCircle2, tone: 'bg-green-50 border-green-100 text-green-600' },
+    { id: 'reddedildi', title: 'Reddedilen Talepler', icon: XCircle, tone: 'bg-red-50 border-red-100 text-red-600' },
   ];
+
+  // Donut SVG hesaplamaları (Raporlar modülündeki grafikle aynı mantık)
+  const donutRadius = 60;
+  const donutCircumference = 2 * Math.PI * donutRadius;
+  let currentOffset = 0;
+  const donutRenderData = statusSlices.map((slice) => {
+    const ratio = totalRequests > 0 ? slice.count / totalRequests : 0;
+    const strokeDash = ratio * donutCircumference;
+    const strokeOffset = -currentOffset;
+    currentOffset += strokeDash;
+    return {
+      ...slice,
+      strokeDasharray: `${strokeDash} ${donutCircumference - strokeDash}`,
+      strokeDashoffset: strokeOffset,
+    };
+  });
 
   // En çok talep oluşturulan kategoriler
   const topCategories = [
@@ -130,100 +184,109 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 2. DÖRT ANA İSTATİSTİK KARTI */}
+      {/* 2. TALEP DURUM KARTLARI — yeni "Talep Durum Dağılımı" grafiğiyle aynı veriden beslenir */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        {/* Kart 1: Açık Talepler */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Açık Talepler</span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-              <ClipboardList className="w-5 h-5" />
+        {statusCards.map((card) => {
+          const Icon = card.icon;
+          const slice = statusSlices.find((s) => s.id === card.id);
+          const count = slice?.count ?? 0;
+          const pct = slice?.percentage ?? 0;
+          return (
+            <div
+              key={card.id}
+              className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{card.title}</span>
+                <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${card.tone}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+              </div>
+              <p className="text-3xl font-black text-slate-900 mt-2">{statsLoading ? '—' : count}</p>
+              <p className="text-xs font-medium text-slate-400 mt-1">
+                {statsLoading ? 'Yükleniyor...' : totalRequests > 0 ? `Oran: %${pct}` : 'Henüz talep yok'}
+              </p>
             </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900 mt-2">12</p>
-          <p className="text-xs font-medium text-slate-400 mt-1">Toplam 32 talep</p>
-        </div>
-
-        {/* Kart 2: Devam Eden İşler */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Devam Eden İşler</span>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500">
-              <Hourglass className="w-5 h-5" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900 mt-2">8</p>
-          <p className="text-xs font-medium text-slate-400 mt-1">Toplam 24 iş</p>
-        </div>
-
-        {/* Kart 3: Tamamlanan İşler */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Tamamlanan İşler</span>
-            <div className="w-10 h-10 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center text-green-600">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900 mt-2">216</p>
-          <p className="text-xs font-medium text-slate-400 mt-1">Bu ay</p>
-        </div>
-
-        {/* Kart 4: Bekleyen Onaylar */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Bekleyen Onaylar</span>
-            <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
-          <p className="text-3xl font-black text-slate-900 mt-2">5</p>
-          <p className="text-xs font-medium text-slate-400 mt-1">Onay bekleyen</p>
-        </div>
+          );
+        })}
       </div>
 
       {/* 3. ORTA BÖLÜM: DONUT GRAFİK, TREND VE HIZLI İŞLEMLER */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Kolon 1: Taleplerin Durumuna Göre Dağılımı (4 Kolon) */}
+        {/* Kolon 1: Talep Durum Dağılımı (Raporlar modülündeki grafikle aynı — gerçek veri) */}
         <div className="lg:col-span-4 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-bold text-slate-800">Taleplerin Durumuna Göre Dağılımı</h2>
-            <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-              32 Talep
-            </span>
-          </div>
-
-          <div className="my-auto py-2 flex flex-row items-center gap-3 sm:gap-4">
-            {/* SVG Donut Grafiği */}
-            <div className="relative w-32 h-32 sm:w-36 sm:h-36 flex-shrink-0 flex items-center justify-center">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#2563eb" strokeWidth="14" strokeDasharray="89.5 238.7" strokeDashoffset="0" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#06b6d4" strokeWidth="14" strokeDasharray="59.7 238.7" strokeDashoffset="-89.5" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#f59e0b" strokeWidth="14" strokeDasharray="44.8 238.7" strokeDashoffset="-149.2" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#8b5cf6" strokeWidth="14" strokeDasharray="22.4 238.7" strokeDashoffset="-194" />
-                <circle cx="50" cy="50" r="38" fill="transparent" stroke="#10b981" strokeWidth="14" strokeDasharray="22.4 238.7" strokeDashoffset="-216.4" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Toplam</span>
-                <span className="text-xl sm:text-2xl font-black text-slate-900 leading-none mt-0.5">32</span>
-              </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-bold text-slate-800">Talep Durum Dağılımı</h2>
+              <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                {statsLoading ? '...' : `${totalRequests} Talep`}
+              </span>
             </div>
 
-            {/* Lejant Listesi (Temiz, taşmayan ve tam sığan düzen) */}
-            <div className="space-y-2 flex-1 min-w-0 text-xs">
-              {donutData.map((d, idx) => (
-                <div key={idx} className="flex items-center justify-between gap-1 text-slate-600">
+            {/* SVG Donut Grafiği */}
+            <div className="flex items-center justify-center py-2">
+              <div className="relative w-40 h-40 flex items-center justify-center">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 160 160">
+                  {/* Zemin Halkası */}
+                  <circle cx="80" cy="80" r={donutRadius} fill="transparent" stroke="#f1f5f9" strokeWidth="18" />
+                  {/* Dilimler */}
+                  {donutRenderData.map((slice, i) => (
+                    <circle
+                      key={i}
+                      cx="80"
+                      cy="80"
+                      r={donutRadius}
+                      fill="transparent"
+                      stroke={slice.color}
+                      strokeWidth="18"
+                      strokeDasharray={slice.strokeDasharray}
+                      strokeDashoffset={slice.strokeDashoffset}
+                      className="transition-all duration-700 ease-out"
+                    />
+                  ))}
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span className="text-2xl font-black text-slate-900 leading-none">
+                    {statsLoading ? '—' : totalRequests}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                    Toplam Talep
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Donut Lejantı */}
+          {statsLoading ? (
+            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-[42px] rounded-xl bg-slate-100 animate-pulse" />
+              ))}
+            </div>
+          ) : statusSlices.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-4 border-t border-slate-100">
+              Henüz talep verisi yok
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
+              {statusSlices.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-slate-50/70 p-2 rounded-xl border border-slate-100 flex items-center justify-between gap-1"
+                >
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                    <span className="font-semibold text-slate-700 truncate">{d.label}</span>
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="text-[11px] font-medium text-slate-700 truncate">{item.label}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0 font-medium">
-                    <span className="font-bold text-slate-900">{d.count}</span>
-                    <span className="text-slate-400 text-[11px] min-w-[34px] text-right">%{d.pct}</span>
+                  <div className="text-[11px] font-bold text-slate-900 text-right flex-shrink-0">
+                    %{item.percentage}
+                    <span className="text-[10px] text-slate-400 font-normal block">({item.count})</span>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Kolon 2: Aylık Talep Trendi (5 Kolon) */}
