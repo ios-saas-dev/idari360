@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   if (!['super_admin','company_admin','facility_manager'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
 
   const body = await request.json();
-  const { plate_number, brand, model, model_year, capacity, driver_name, driver_phone, route_name, facility_id } = body;
+  const { plate_number, brand, model, model_year, capacity, driver_name, driver_phone, route_name, facility_id, is_active } = body;
   if (!plate_number) return NextResponse.json({ error: 'Plaka zorunlu' }, { status: 400 });
 
   const { data, error } = await supabase.from('service_vehicles').insert({
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     facility_id: facility_id || profile!.facility_id,
     plate_number, brand, model, model_year, capacity: capacity || 16,
     driver_name, driver_phone, route_name,
+    is_active: typeof is_active === 'boolean' ? is_active : true,
   }).select().single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

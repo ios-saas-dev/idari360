@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Bus,
   Car,
@@ -16,7 +16,12 @@ import {
   Loader2,
   X,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Download,
+  FileSpreadsheet,
+  UploadCloud,
+  AlertTriangle,
+  FileUp
 } from 'lucide-react';
 
 interface ServiceRoute {
@@ -62,6 +67,25 @@ interface FormDataState {
   is_active: boolean;
 }
 
+interface ImportIssue {
+  row: number;
+  plate: string;
+  message: string;
+}
+
+interface ImportResult {
+  success: boolean;
+  message: string;
+  summary: {
+    total: number;
+    imported: number;
+    duplicates: number;
+    invalid: number;
+  };
+  duplicates: ImportIssue[];
+  errors: ImportIssue[];
+}
+
 const initialFormState: FormDataState = {
   plate_number: '',
   brand: '',
@@ -85,6 +109,17 @@ export default function ShuttlePage() {
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [formData, setFormData] = useState<FormDataState>(initialFormState);
+
+  // Excel İçe Aktarma State
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState<boolean>(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const MAX_IMPORT_FILE_MB = 5;
 
   // Fetch vehicles
   const fetchVehicles = async () => {
@@ -208,6 +243,67 @@ export default function ShuttlePage() {
     setShowModal(true);
   };
 
+  // Excel içe aktarma yardımcıları
+  const openImportModal = () => {
+    setImportFile(null);
+    setImportResult(null);
+    setImportError(null);
+    setDragOver(false);
+    setShowImportModal(true);
+  };
+
+  const closeImportModal = () => {
+    if (importing) return;
+    setShowImportModal(false);
+  };
+
+  const pickImportFile = (file: File | null) => {
+    setImportError(null);
+    setImportResult(null);
+    if (!file) {
+      setImportFile(null);
+      return;
+    }
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls')) {
+      setImportError('Yalnızca .xlsx veya .xls uzantılı Excel dosyaları yüklenebilir.');
+      setImportFile(null);
+      return;
+    }
+    if (file.size > MAX_IMPORT_FILE_MB * 1024 * 1024) {
+      setImportError(`Dosya boyutu en fazla ${MAX_IMPORT_FILE_MB} MB olabilir.`);
+      setImportFile(null);
+      return;
+    }
+    setImportFile(file);
+  };
+
+  const handleImportSubmit = async () => {
+    if (!importFile || importing) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', importFile);
+      const res = await fetch('/api/shuttle/vehicles/import', {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'İçe aktarma başarısız oldu.');
+      }
+      setImportResult(data as ImportResult);
+      if ((data as ImportResult)?.summary?.imported > 0) {
+        fetchVehicles();
+      }
+    } catch (err: any) {
+      setImportError(err?.message || 'İçe aktarma sırasında bir hata oluştu.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // Toggle active status inline
   const handleToggleActive = async (vehicle: Vehicle) => {
     const updatedStatus = !vehicle.is_active;
@@ -320,13 +416,31 @@ export default function ShuttlePage() {
         </div>
 
         {activeTab === 'vehicles' && (
-          <button
-            onClick={handleOpenAddModal}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl shadow-sm hover:shadow transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Araç Ekle</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/api/shuttle/vehicles/template"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium text-sm rounded-xl shadow-sm transition-all"
+              title="Verilerin nasıl doldurulacağını gösteren hazır başlıklı Excel şablonunu indirin"
+            >
+              <Download className="w-4 h-4" />
+              <span>Şablon İndir</span>
+            </a>
+            <button
+              onClick={openImportModal}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-xl shadow-sm hover:shadow transition-all"
+              title="Doldurduğunuz Excel dosyasını yükleyerek araçları toplu ekleyin"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Excel ile Aktar</span>
+            </button>
+            <button
+              onClick={handleOpenAddModal}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl shadow-sm hover:shadow transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Araç Ekle</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -417,13 +531,29 @@ export default function ShuttlePage() {
             <p className="text-sm text-slate-500 max-w-sm mx-auto mt-1 mb-4">
               Sisteme servis aracı ekleyerek personel taşımacılığını organize etmeye başlayabilirsiniz.
             </p>
-            <button
-              onClick={handleOpenAddModal}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
-            >
-              <Plus className="w-4 h-4" />
-              Araç Ekle
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                onClick={handleOpenAddModal}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" />
+                Araç Ekle
+              </button>
+              <button
+                onClick={openImportModal}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Excel ile Aktar
+              </button>
+              <a
+                href="/api/shuttle/vehicles/template"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50"
+              >
+                <Download className="w-4 h-4" />
+                Şablon İndir
+              </a>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -766,6 +896,219 @@ export default function ShuttlePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Excel ile İçe Aktarma Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">Excel ile Servis Aracı Aktar</h2>
+              </div>
+              <button
+                onClick={closeImportModal}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Adım rehberi */}
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-900">
+                <p className="font-semibold mb-1.5">Nasıl çalışır?</p>
+                <ol className="list-decimal list-inside space-y-1 text-blue-800 text-[13px]">
+                  <li>
+                    Hazır başlıklı şablonu indirin:
+                    <a
+                      href="/api/shuttle/vehicles/template"
+                      className="ml-1.5 inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:text-blue-600"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Şablonu İndir
+                    </a>
+                  </li>
+                  <li>
+                    Şablondaki <strong>&quot;Araçlar&quot;</strong> sekmesini doldurun. Nasıl doldurulacağını{' '}
+                    <strong>&quot;Örnek Doldurulmuş&quot;</strong> sekmesinden görebilirsiniz.
+                  </li>
+                  <li>Doldurduğunuz dosyayı aşağıya yükleyip &quot;İçe Aktar&quot; butonuna basın.</li>
+                </ol>
+              </div>
+
+              {importResult ? (
+                /* ---- Sonuç Görünümü ---- */
+                <div className="space-y-4">
+                  <div
+                    className={`flex items-start gap-3 p-4 rounded-xl border ${
+                      importResult.summary.imported > 0
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}
+                  >
+                    {importResult.summary.imported > 0 ? (
+                      <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                    )}
+                    <p className="text-sm font-medium">{importResult.message}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-slate-900">{importResult.summary.total}</p>
+                      <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Toplam Satır</p>
+                    </div>
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-emerald-700">{importResult.summary.imported}</p>
+                      <p className="text-[11px] font-medium text-emerald-600 uppercase tracking-wider">Eklenen</p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-amber-700">{importResult.summary.duplicates}</p>
+                      <p className="text-[11px] font-medium text-amber-600 uppercase tracking-wider">Zaten Kayıtlı</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                      <p className="text-lg font-bold text-red-700">{importResult.summary.invalid}</p>
+                      <p className="text-[11px] font-medium text-red-600 uppercase tracking-wider">Hatalı Satır</p>
+                    </div>
+                  </div>
+
+                  {(importResult.duplicates.length > 0 || importResult.errors.length > 0) && (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        Atlamış Satırlar
+                      </div>
+                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-100">
+                        {[...importResult.duplicates, ...importResult.errors].map((issue, idx) => (
+                          <div key={idx} className="flex items-start gap-2 px-3 py-2 text-xs">
+                            <span className="font-mono bg-slate-100 text-slate-700 rounded px-1.5 py-0.5 shrink-0">
+                              Satır {issue.row}
+                            </span>
+                            <span className="font-mono font-semibold text-slate-800 shrink-0">{issue.plate}</span>
+                            <span className="text-slate-500">{issue.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ---- Dosya Seçme ---- */
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={(e) => pickImportFile(e.target.files?.[0] || null)}
+                  />
+                  <div
+                    onClick={() => !importing && fileInputRef.current?.click()}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOver(true);
+                    }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      if (!importing) pickImportFile(e.dataTransfer.files?.[0] || null);
+                    }}
+                    className={`cursor-pointer border-2 border-dashed rounded-2xl p-8 text-center transition-colors ${
+                      dragOver
+                        ? 'border-emerald-400 bg-emerald-50'
+                        : 'border-slate-200 hover:border-emerald-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {importFile ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <FileUp className="w-8 h-8 text-emerald-600" />
+                        <p className="text-sm font-semibold text-slate-800 break-all">{importFile.name}</p>
+                        <p className="text-xs text-slate-500">{(importFile.size / 1024).toFixed(1)} KB</p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            pickImportFile(null);
+                          }}
+                          className="text-xs text-rose-600 hover:text-rose-700 font-medium"
+                        >
+                          Dosyayı kaldır
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2">
+                        <UploadCloud className="w-10 h-10 text-slate-300" />
+                        <p className="text-sm font-medium text-slate-700">
+                          Excel dosyasını buraya sürükleyin veya tıklayıp seçin
+                        </p>
+                        <p className="text-xs text-slate-400">.xlsx / .xls — en fazla {MAX_IMPORT_FILE_MB} MB</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {importError && (
+                <div className="flex items-start gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <span>{importError}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+              {importResult ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => pickImportFile(null)}
+                    className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-sm font-medium transition-colors"
+                  >
+                    Yeni Dosya Yükle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeImportModal}
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium shadow-sm transition-colors"
+                  >
+                    Kapat
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={closeImportModal}
+                    disabled={importing}
+                    className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    İptal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleImportSubmit}
+                    disabled={!importFile || importing}
+                    className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow-sm transition-colors disabled:opacity-50"
+                  >
+                    {importing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileSpreadsheet className="w-4 h-4" />
+                    )}
+                    {importing ? 'Aktarılıyor...' : 'İçe Aktar'}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
