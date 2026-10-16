@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Calendar,
-  ChevronDown,
   ClipboardList,
   Hourglass,
   CheckCircle2,
@@ -16,6 +15,7 @@ import {
   Package,
   ChevronRight,
   TrendingUp,
+  TrendingDown,
   Megaphone,
   Car,
   Building2,
@@ -34,6 +34,26 @@ interface RequestStatusSlice {
   color: string;
 }
 
+interface TrendPoint {
+  month: string;
+  count: number;
+  solved?: number;
+}
+
+interface CategoryPerformanceItem {
+  label: string;
+  color?: string;
+  total: number;
+}
+
+interface AnnouncementItem {
+  id: string;
+  title: string;
+  content?: string | null;
+  published_at?: string | null;
+  created_at?: string | null;
+}
+
 export default function DashboardPage() {
   const [userName, setUserName] = useState('Yönetici');
   const [userRole, setUserRole] = useState<string>('');
@@ -42,6 +62,11 @@ export default function DashboardPage() {
     slices: RequestStatusSlice[];
   } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [monthlyTrend, setMonthlyTrend] = useState<TrendPoint[]>([]);
+  const [categoryStats, setCategoryStats] = useState<CategoryPerformanceItem[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(true);
+  const [todayLabel, setTodayLabel] = useState('');
 
   useEffect(() => {
     async function loadUser() {
@@ -85,6 +110,8 @@ export default function DashboardPage() {
           totalRequests: summary?.kpi?.total_requests ?? 0,
           slices: Array.isArray(summary?.donut_chart) ? summary.donut_chart : [],
         });
+        setMonthlyTrend(Array.isArray(summary?.monthly_trend) ? summary.monthly_trend : []);
+        setCategoryStats(Array.isArray(summary?.category_performance) ? summary.category_performance : []);
       } catch (err) {
         console.error('Talep durum dağılımı yüklenemedi:', err);
       } finally {
@@ -92,6 +119,31 @@ export default function DashboardPage() {
       }
     }
     loadRequestStats();
+  }, []);
+
+  // Bugünün tarihi (sunucu/istemci gün farkını önlemek için mount sonrası hesaplanır)
+  useEffect(() => {
+    const now = new Date();
+    const datePart = now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const weekdayPart = now.toLocaleDateString('tr-TR', { weekday: 'long' });
+    setTodayLabel(`${datePart}, ${weekdayPart}`);
+  }, []);
+
+  // Son duyurular — gerçek duyuru modülünden (/api/announcements)
+  useEffect(() => {
+    async function loadAnnouncements() {
+      try {
+        const res = await fetch('/api/announcements');
+        if (!res.ok) throw new Error('Duyurular alınamadı');
+        const json = await res.json();
+        setAnnouncements(Array.isArray(json?.data) ? json.data.slice(0, 3) : []);
+      } catch (err) {
+        console.error('Duyurular yüklenemedi:', err);
+      } finally {
+        setAnnouncementsLoading(false);
+      }
+    }
+    loadAnnouncements();
   }, []);
 
   // Hızlı işlemler listesi (Rol durumuna göre dinamik)
@@ -153,14 +205,49 @@ export default function DashboardPage() {
     };
   });
 
-  // En çok talep oluşturulan kategoriler
-  const topCategories = [
-    { name: 'Yemekhane', count: 12, pct: 100, color: 'bg-blue-600' },
-    { name: 'Servis', count: 8, pct: 66, color: 'bg-cyan-500' },
-    { name: 'Filo', count: 6, pct: 50, color: 'bg-amber-500' },
-    { name: 'Temizlik', count: 4, pct: 33, color: 'bg-purple-600' },
-    { name: 'Diğer', count: 2, pct: 16, color: 'bg-slate-400' },
-  ];
+  // En çok talep oluşturulan kategoriler — /api/reports/summary → category_performance
+  const categoryBarColors = ['bg-blue-600', 'bg-cyan-500', 'bg-amber-500', 'bg-purple-600', 'bg-slate-400'];
+  const sortedCategories = [...categoryStats]
+    .filter((c) => (Number(c.total) || 0) > 0)
+    .sort((a, b) => (Number(b.total) || 0) - (Number(a.total) || 0))
+    .slice(0, 5);
+  const maxCategoryTotal = sortedCategories.length > 0 ? Number(sortedCategories[0].total) || 0 : 0;
+  const topCategories = sortedCategories.map((c, idx) => {
+    const categoryTotal = Number(c.total) || 0;
+    return {
+      name: c.label,
+      count: categoryTotal,
+      pct: maxCategoryTotal > 0 ? Math.round((categoryTotal / maxCategoryTotal) * 100) : 0,
+      color: categoryBarColors[idx % categoryBarColors.length],
+    };
+  });
+
+  // Aylık trend grafiği — /api/reports/summary → monthly_trend (son 6 ay)
+  const trendPoints = monthlyTrend.map((t) => ({ month: t.month, count: Number(t.count) || 0 }));
+  const trendMaxCount = trendPoints.reduce((max, p) => Math.max(max, p.count), 0);
+  const hasTrendData = trendPoints.length > 0 && trendMaxCount > 0;
+  const axisStep = Math.max(1, Math.ceil(trendMaxCount / 4));
+  const gridLabels = [4, 3, 2, 1, 0].map((k) => axisStep * k);
+
+  const CHART_W = 500;
+  const CHART_H = 160;
+  const chartPoints = trendPoints.map((p, i) => {
+    const x = 20 + (i * (470 - 20)) / Math.max(1, trendPoints.length - 1);
+    const y = 138 - (p.count / (axisStep * 4)) * (138 - 10);
+    return { ...p, x, y };
+  });
+  const chartLinePath = chartPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const chartAreaPath = chartPoints.length > 0 ? `${chartLinePath} L 470 ${CHART_H} L 20 ${CHART_H} Z` : '';
+  let peakIdx = 0;
+  chartPoints.forEach((p, i) => {
+    if (p.count > chartPoints[peakIdx].count) peakIdx = i;
+  });
+  const peakPoint = chartPoints.length > 0 ? chartPoints[peakIdx] : { month: '', count: 0, x: 0, y: 0 };
+
+  // Trend rozeti — son ayın bir önceki aya göre değişimi
+  const lastMonthCount = trendPoints.length > 0 ? trendPoints[trendPoints.length - 1].count : 0;
+  const prevMonthCount = trendPoints.length > 1 ? trendPoints[trendPoints.length - 2].count : 0;
+  const trendChange = prevMonthCount > 0 ? ((lastMonthCount - prevMonthCount) / prevMonthCount) * 100 : null;
 
   return (
     <div className="space-y-6">
@@ -176,11 +263,10 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 shadow-sm text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 shadow-sm text-sm font-semibold text-slate-700">
             <Calendar className="w-4 h-4 text-slate-400" />
-            <span>30 Mayıs 2026, Cuma</span>
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          </button>
+            <span>{todayLabel || '—'}</span>
+          </div>
         </div>
       </div>
 
@@ -289,73 +375,104 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Kolon 2: Aylık Talep Trendi (5 Kolon) */}
+        {/* Kolon 2: Aylık Talep Trendi (5 Kolon) — /api/reports/summary → monthly_trend */}
         <div className="lg:col-span-5 bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between mb-1">
             <div>
               <h2 className="text-sm font-bold text-slate-800">Aylık Talep Trendi</h2>
               <p className="text-xs text-slate-400 mt-0.5">Son 6 aylık talep yoğunluğu</p>
             </div>
-            <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>+%18.4</span>
-            </div>
+            {trendChange !== null && (
+              <div
+                className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${
+                  trendChange >= 0
+                    ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                    : 'text-red-600 bg-red-50 border-red-100'
+                }`}
+              >
+                {trendChange >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                <span>
+                  {trendChange >= 0 ? '+' : '-'}%{Math.abs(trendChange).toFixed(1)}
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="flex-1 flex flex-col justify-end w-full relative mt-3 min-h-[190px]">
-            {/* Grid Çizgileri ve Y Ekseni */}
-            <div className="relative flex-1 w-full flex flex-col justify-between pb-6">
-              {[80, 60, 40, 20, 0].map((val, idx) => (
-                <div key={idx} className="flex items-center w-full">
-                  <span className="w-6 text-[10px] font-bold text-slate-400 flex-shrink-0 text-left">{val}</span>
-                  <div className="flex-1 border-b border-slate-100 ml-1" />
-                </div>
-              ))}
+          {hasTrendData ? (
+            <div className="flex-1 flex flex-col justify-end w-full relative mt-3 min-h-[190px]">
+              {/* Grid Çizgileri ve Y Ekseni */}
+              <div className="relative flex-1 w-full flex flex-col justify-between pb-6">
+                {gridLabels.map((val, idx) => (
+                  <div key={idx} className="flex items-center w-full">
+                    <span className="w-6 text-[10px] font-bold text-slate-400 flex-shrink-0 text-left">{val}</span>
+                    <div className="flex-1 border-b border-slate-100 ml-1" />
+                  </div>
+                ))}
 
-              {/* SVG Eğrisi (Kılavuz çizgileriyle tam uyumlu) */}
-              <div className="absolute inset-0 pl-7 pb-6 pointer-events-none">
-                <svg className="w-full h-full overflow-visible" viewBox="0 0 500 160" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
+                {/* SVG Eğrisi (gerçek aylık verilerden hesaplanır) */}
+                <div className="absolute inset-0 pl-7 pb-6 pointer-events-none">
+                  <svg
+                    className="w-full h-full overflow-visible"
+                    viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                    preserveAspectRatio="none"
+                  >
+                    <defs>
+                      <linearGradient id="trendGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
+                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
 
-                  <path
-                    d="M 20 140 C 70 125, 110 85, 150 75 C 190 65, 230 95, 270 90 C 310 85, 350 45, 395 30 C 420 22, 450 35, 470 45 L 470 160 L 20 160 Z"
-                    fill="url(#trendGradient)"
-                  />
-                  <path
-                    d="M 20 140 C 70 125, 110 85, 150 75 C 190 65, 230 95, 270 90 C 310 85, 350 45, 395 30 C 420 22, 450 35, 470 45"
-                    fill="none"
-                    stroke="#2563eb"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
+                    <path d={chartAreaPath} fill="url(#trendGradient)" />
+                    <path
+                      d={chartLinePath}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
 
-                  {/* Mayıs Zirve Noktası */}
-                  <circle cx="395" cy="30" r="5" fill="#2563eb" stroke="#ffffff" strokeWidth="2.5" />
-                </svg>
+                    {/* Zirve noktası */}
+                    <circle cx={peakPoint.x} cy={peakPoint.y} r="5" fill="#2563eb" stroke="#ffffff" strokeWidth="2.5" />
+                  </svg>
 
-                {/* Mayıs 56 Talep Etiketi (Zirve noktasının hemen üstünde) */}
-                <div className="absolute top-0 right-[14%] -translate-x-1/2 bg-white border border-blue-200 rounded-xl px-2.5 py-1 text-center shadow-lg shadow-blue-500/10 pointer-events-auto">
-                  <span className="text-[10px] text-slate-400 block font-semibold leading-none">Mayıs</span>
-                  <span className="text-xs font-black text-blue-600 leading-tight">56 Talep</span>
+                  {/* Zirve noktası etiketi (yüksekse altına, değilse üstüne yerleşir) */}
+                  <div
+                    className="absolute bg-white border border-blue-200 rounded-xl px-2.5 py-1 text-center shadow-lg shadow-blue-500/10 pointer-events-auto"
+                    style={{
+                      left: `${(peakPoint.x / CHART_W) * 100}%`,
+                      top: `${
+                        (peakPoint.y / CHART_H) * 100 < 34
+                          ? Math.min(80, (peakPoint.y / CHART_H) * 100 + 4)
+                          : Math.max(1, (peakPoint.y / CHART_H) * 100 - 24)
+                      }%`,
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <span className="text-[10px] text-slate-400 block font-semibold leading-none">{peakPoint.month}</span>
+                    <span className="text-xs font-black text-blue-600 leading-tight">{peakPoint.count} Talep</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* X Ekseni Ayları */}
-            <div className="flex justify-between pl-7 pr-3 pt-1 border-t border-slate-100 text-[11px] font-semibold text-slate-400">
-              <span>Oca</span>
-              <span>Şub</span>
-              <span>Mar</span>
-              <span>Nis</span>
-              <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded">May</span>
-              <span>Haz</span>
+              {/* X Ekseni Ayları */}
+              <div className="flex justify-between pl-7 pr-3 pt-1 border-t border-slate-100 text-[11px] font-semibold text-slate-400">
+                {chartPoints.map((p, idx) => (
+                  <span
+                    key={idx}
+                    className={idx === peakIdx ? 'font-bold text-blue-600 bg-blue-50 px-1.5 rounded' : ''}
+                  >
+                    {p.month}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center min-h-[190px] text-xs text-slate-400">
+              {statsLoading ? 'Yükleniyor...' : 'Henüz talep verisi yok'}
+            </div>
+          )}
         </div>
 
         {/* Kolon 3: Hızlı İşlemler (3 Kolon) */}
@@ -400,47 +517,28 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Duyuru 1 */}
-              <div className="border-b border-slate-100 pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-600" />
-                    <span className="text-xs font-bold text-slate-800">Bayram Tatili Duyurusu</span>
-                  </div>
-                  <span className="text-[11px] text-slate-400">30.05.2026</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1 pl-4">
-                  Kurban Bayramı tatili 6-9 Haziran tarihleri arasındadır.
+              {announcements.length > 0 ? (
+                announcements.map((item) => {
+                  const dateValue = item.published_at || item.created_at;
+                  const dateStr = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
+                  return (
+                    <div key={item.id} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0" />
+                          <span className="text-xs font-bold text-slate-800 truncate">{item.title}</span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 flex-shrink-0">{dateStr}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 pl-4 line-clamp-2">{item.content}</p>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-xs text-slate-400 py-2">
+                  {announcementsLoading ? 'Yükleniyor...' : 'Henüz duyuru yok'}
                 </p>
-              </div>
-
-              {/* Duyuru 2 */}
-              <div className="border-b border-slate-100 pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-slate-400" />
-                    <span className="text-xs font-bold text-slate-800">Yemekhane Çalışma Saatleri</span>
-                  </div>
-                  <span className="text-[11px] text-slate-400">28.05.2026</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1 pl-4">
-                  1 Haziran itibarıyla yemekhane saatlerinde değişiklik olacaktır.
-                </p>
-              </div>
-
-              {/* Duyuru 3 */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-slate-400" />
-                    <span className="text-xs font-bold text-slate-800">Servis Güzergah Güncellemesi</span>
-                  </div>
-                  <span className="text-[11px] text-slate-400">27.05.2026</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1 pl-4">
-                  Bazı servis güzergahlarında güncelleme yapılmıştır.
-                </p>
-              </div>
+              )}
             </div>
           </div>
 
@@ -459,19 +557,25 @@ export default function DashboardPage() {
         <div className="lg:col-span-6 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <h2 className="text-sm font-bold text-slate-800 mb-4">En Çok Talep Oluşturulan Kategoriler</h2>
 
-          <div className="space-y-3.5 my-auto">
-            {topCategories.map((cat, idx) => (
-              <div key={idx} className="space-y-1">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-700">{cat.name}</span>
-                  <span className="text-slate-900">{cat.count}</span>
+          {topCategories.length > 0 ? (
+            <div className="space-y-3.5 my-auto">
+              {topCategories.map((cat, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-slate-700">{cat.name}</span>
+                    <span className="text-slate-900">{cat.count}</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div className={`h-full rounded-full ${cat.color}`} style={{ width: `${cat.pct}%` }} />
+                  </div>
                 </div>
-                <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div className={`h-full rounded-full ${cat.color}`} style={{ width: `${cat.pct}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-xs text-slate-400">
+              {statsLoading ? 'Yükleniyor...' : 'Henüz talep verisi yok'}
+            </div>
+          )}
         </div>
       </div>
 
