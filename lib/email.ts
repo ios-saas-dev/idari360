@@ -30,7 +30,9 @@ async function sendEmail({
   html: string;
 }): Promise<BaseEmailResponse> {
   const recipientList = Array.isArray(to) ? to : [to];
-  const fromEmail = process.env.EMAIL_FROM || 'İdari360 <bildirim@idari360.com>';
+  // Gönderici görünen adı ASCII-güvenli tutulur; Türkçe "İ" harfi
+  // İngilizce yerel ayarlı istemcilerde/başlıklandırmada bozuluyor.
+  const fromEmail = process.env.EMAIL_FROM || 'idari360 <bildirim@idari360.com>';
 
   // 1. Primary: Resend API
   const resend = getResendClient();
@@ -122,6 +124,21 @@ async function sendEmail({
 }
 
 /**
+ * Marka adını (örn. "İdari360" veya "idari360") başlıktaki iki renkli logo
+ * görünümüne dönüştürür: "360" eki mavi, kalan kısım beyaz.
+ */
+function renderBrandMark(brandName: string) {
+  const suffix = '360';
+  const idx = brandName.lastIndexOf(suffix);
+  const headStyle = 'color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;';
+  const tailStyle = 'color: #38bdf8; font-size: 24px; font-weight: 800;';
+  if (idx > 0) {
+    return `<span style="${headStyle}">${brandName.slice(0, idx)}</span><span style="${tailStyle}">${brandName.slice(idx)}</span>`;
+  }
+  return `<span style="${headStyle}">${brandName}</span>`;
+}
+
+/**
  * Ortak kurumsal e-posta şablon iskeleti
  */
 function renderBaseTemplate({
@@ -129,11 +146,13 @@ function renderBaseTemplate({
   contentHtml,
   badgeText,
   badgeColor = '#3b82f6',
+  brandName = 'İdari360',
 }: {
   headerTitle: string;
   contentHtml: string;
   badgeText?: string;
   badgeColor?: string;
+  brandName?: string;
 }) {
   return `
 <!DOCTYPE html>
@@ -148,7 +167,7 @@ function renderBaseTemplate({
     <!-- Logo & Header -->
     <div style="background: #0f1c2e; padding: 28px 24px; text-align: center;">
       <div style="display: inline-block;">
-        <span style="color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">İdari</span><span style="color: #38bdf8; font-size: 24px; font-weight: 800;">360</span>
+        ${renderBrandMark(brandName)}
       </div>
       <p style="color: #94a3b8; font-size: 13px; margin: 6px 0 0 0; font-weight: 500;">Akıllı İdari İşlemler Yönetim Platformu</p>
     </div>
@@ -166,8 +185,8 @@ function renderBaseTemplate({
 
       <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #f1f5f9; text-align: center;">
         <p style="color: #94a3b8; font-size: 12px; margin: 0; line-height: 1.5;">
-          Bu bilgilendirme mesajı İdari360 sisteminiz tarafından otomatik olarak oluşturulmuştur.<br>
-          © ${new Date().getFullYear()} İdari360 Platformu. Tüm hakları saklıdır.
+          Bu bilgilendirme mesajı ${brandName} sisteminiz tarafından otomatik olarak oluşturulmuştur.<br>
+          © ${new Date().getFullYear()} ${brandName} Platformu. Tüm hakları saklıdır.
         </p>
       </div>
     </div>
@@ -190,9 +209,11 @@ export async function sendOtpEmail({
   purpose?: string;
 }): Promise<BaseEmailResponse> {
   const isReset = purpose === 'password_reset';
+  // OTP e-postasında marka adı ASCII-güvenli küçük harfle gösterilir.
+  const brandName = 'idari360';
   const subject = isReset
-    ? `İdari360 — Şifre Sıfırlama Kodunuz: ${code}`
-    : `İdari360 — Güvenlik Doğrulama Kodunuz: ${code}`;
+    ? `idari360 — Şifre Sıfırlama Kodunuz: ${code}`
+    : `idari360 — Güvenlik Doğrulama Kodunuz: ${code}`;
 
   const contentHtml = `
     <h2 style="color: #0f172a; font-size: 20px; font-weight: 700; margin: 0 0 10px 0;">
@@ -200,8 +221,8 @@ export async function sendOtpEmail({
     </h2>
     <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
       ${isReset
-        ? 'İdari360 hesabınızın şifresini yenilemek için aşağıdaki tek kullanımlık güvenlik kodunu kullanınız:'
-        : 'İdari360 hesabınızı aktive etmek veya girişinizi onaylamak için 6 haneli güvenlik kodunuz:'
+        ? 'idari360 hesabınızın şifresini yenilemek için aşağıdaki tek kullanımlık güvenlik kodunu kullanınız:'
+        : 'idari360 hesabınızı aktive etmek veya girişinizi onaylamak için 6 haneli güvenlik kodunuz:'
       }
     </p>
 
@@ -226,6 +247,7 @@ export async function sendOtpEmail({
     badgeText: isReset ? 'ŞİFRE GÜNCELLEME' : 'GÜVENLİK ONAYI',
     badgeColor: isReset ? '#f59e0b' : '#2563eb',
     contentHtml,
+    brandName,
   });
 
   return sendEmail({ to, subject, html });

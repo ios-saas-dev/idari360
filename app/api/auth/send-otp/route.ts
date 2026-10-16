@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log(`[İdari360 OTP Service] E-posta: ${cleanEmail} -> Gönderim: ${emailResult.provider} (Başarı: ${emailResult.success})`);
+    console.log(`[idari360 OTP Service] E-posta: ${cleanEmail} -> Gönderim: ${emailResult.provider} (Başarı: ${emailResult.success})`);
 
     // Geliştirme / Test kolaylığı için: SMTP yapılandırılmamışsa veya test aşamasındaysa dev_code desteği
     const isDevOrTest = process.env.NODE_ENV !== 'production' || process.env.ENABLE_DEV_OTP === 'true';
