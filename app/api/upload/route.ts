@@ -36,6 +36,42 @@ const EXT_TO_TYPE: Record<string, string> = {
   heif: 'image/heif',
 };
 
+// Dosya imzası (magic bytes) ile gerçek görsel türünü tespit eder.
+// Beyan edilen MIME türüne güvenmek yerine dosya içeriği doğrulanır.
+function detectImageType(bytes: Uint8Array): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+    return 'image/gif';
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  // HEIC/HEIF: 4-7 bayt "ftyp", 8-11 bayt marka kutusu
+  if (bytes.length >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+    if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs'].includes(brand)) {
+      return 'image/heic';
+    }
+    if (['mif1', 'msf1'].includes(brand)) {
+      return 'image/heif';
+    }
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -118,12 +154,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Geçersiz yükleme bağlamı.' }, { status: 400 });
   }
 
-  const objectPath = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  // 3. Dosya içeriği doğrulaması: beyan edilen MIME türüne güvenmek yerine
+  //    dosyanın gerçek imzası (magic bytes) kontrol edilir ve tür buradan alınır.
   const arrayBuffer = await file.arrayBuffer();
+  const detectedType = detectImageType(new Uint8Array(arrayBuffer));
+  if (!detectedType) {
+    return NextResponse.json(
+      {
+        error:
+          'Dosya geçerli bir görsel değil. Yalnızca JPG, PNG, WEBP, GIF veya HEIC yükleyebilirsiniz.',
+      },
+      { status: 400 }
+    );
+  }
+
+  const finalMime = ALLOWED_TYPES.includes(detectedType) ? detectedType : mimeType;
+  const finalExt = EXT_BY_TYPE[finalMime] || ext;
+
+  const objectPath = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${finalExt}`;
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(objectPath, arrayBuffer, { contentType: mimeType, upsert: false });
+    .upload(objectPath, arrayBuffer, { contentType: finalMime, upsert: false });
 
   if (uploadError) {
     return NextResponse.json(
