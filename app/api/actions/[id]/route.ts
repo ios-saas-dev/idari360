@@ -30,7 +30,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       .from('audits')
       .select(`
         id, title, audit_date, total_score, max_possible_score, percentage, status,
-        audit_type:audit_types(id, name, module)
+        audit_type:audit_types(id, name, module),
+        service_vehicle:service_vehicles(id, plate_number, route_name, brand, model)
       `)
       .eq('id', data.audit_id)
       .single();

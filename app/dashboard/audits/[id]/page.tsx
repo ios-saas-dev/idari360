@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   ShieldCheck,
+  Bus,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -76,6 +77,13 @@ interface AuditDetail {
   notes?: string;
   facility?: { id: string; name: string; city: string } | null;
   auditor?: { id: string; full_name: string; email: string } | null;
+  service_vehicle?: {
+    id: string;
+    plate_number: string;
+    route_name?: string | null;
+    brand?: string | null;
+    model?: string | null;
+  } | null;
   audit_type?: {
     id: string;
     name: string;
@@ -169,7 +177,7 @@ export default function AuditRunnerPage({
         categories.forEach((cat) => {
           cat.questions?.forEach((q) => {
             initialMap[q.id] = {
-              answer: 'evet',
+              answer: 'na',
               note: '',
               due_date: defaultDue,
               photo_url: '',
@@ -233,7 +241,7 @@ export default function AuditRunnerPage({
 
       questions.forEach((q) => {
         const state = answersState[q.id];
-        const ans = state?.answer || 'evet';
+        const ans = state?.answer || 'na';
         const weight = Number(q.max_points) || 1;
 
         if (ans === 'evet') {
@@ -272,6 +280,14 @@ export default function AuditRunnerPage({
       nonConformitiesCount,
     };
   }, [categories, answersState]);
+
+  // N/A (yanıtlanmadı) soru sayısı — tamamlamak için tüm sorular Evet/Hayır olmalı
+  const unansweredCount = useMemo(() => {
+    return allQuestions.filter((q) => {
+      const ans = answersState[q.id]?.answer || 'na';
+      return ans === 'na';
+    }).length;
+  }, [allQuestions, answersState]);
 
   // Handle Question Answer Change
   const handleAnswerSelect = (
@@ -588,6 +604,35 @@ export default function AuditRunnerPage({
 
       {/* Audit Meta & Live Score Banner */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+        {/* Denetlenen Servis Aracı Şeridi (araç bazlı denetim) */}
+        {audit.service_vehicle && (
+          <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-white text-indigo-600 rounded-xl border border-indigo-200/70 shadow-xs">
+                <Bus className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-indigo-600 font-semibold uppercase tracking-wider">
+                  Denetlenen Servis Aracı
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  <span className="text-sm font-bold text-slate-900">
+                    Hat: {audit.service_vehicle.route_name || 'Atanmamış'}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-indigo-800 bg-white border border-indigo-200/70 px-2.5 py-0.5 rounded-lg tracking-wider">
+                    {audit.service_vehicle.plate_number}
+                  </span>
+                </div>
+              </div>
+            </div>
+            {(audit.service_vehicle.brand || audit.service_vehicle.model) && (
+              <div className="text-xs text-indigo-700 font-medium sm:pr-1">
+                {[audit.service_vehicle.brand, audit.service_vehicle.model].filter(Boolean).join(' ')}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
           {/* Info Card 1: Facility */}
           <div className="flex items-center gap-3">
@@ -826,7 +871,7 @@ export default function AuditRunnerPage({
                 <div className="divide-y divide-slate-100">
                   {catQuestions.map((q, qIndex) => {
                     const state = answersState[q.id] || {
-                      answer: 'evet',
+                      answer: 'na',
                       note: '',
                       due_date: '',
                       photo_url: '',
@@ -1122,14 +1167,49 @@ export default function AuditRunnerPage({
                   {scoreBreakdown.nonConformitiesCount} Adet
                 </span>
               </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Yanıtlanmayan (N/A):</span>
+                <span
+                  className={`font-bold ${
+                    unansweredCount > 0 ? 'text-amber-600' : 'text-emerald-600'
+                  }`}
+                >
+                  {unansweredCount} Adet
+                </span>
+              </div>
               {scoreBreakdown.nonConformitiesCount > 0 && (
                 <div className="text-[11px] text-rose-700 bg-rose-50 p-2.5 rounded-lg border border-rose-200 mt-2">
                   ℹ️ "Hayır" olarak işaretlenen her madde için sisteme otomatik
                   olarak terminli <strong>Aksiyon (ACT-...)</strong> kaydı
                   açılacaktır.
+                  {audit.service_vehicle && (
+                    <>
+                      {' '}
+                      Aksiyonlar{' '}
+                      <strong>
+                        {audit.service_vehicle.plate_number}
+                        {audit.service_vehicle.route_name
+                          ? ` (${audit.service_vehicle.route_name})`
+                          : ''}
+                      </strong>{' '}
+                      aracına bağlanır.
+                    </>
+                  )}
                 </div>
               )}
             </div>
+
+            {unansweredCount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <strong>{unansweredCount} soru hâlâ N/A (yanıtlanmadı).</strong>{' '}
+                  Tüm sorular Evet veya Hayır olarak yanıtlanmadan denetim
+                  tamamlanamaz. Çalışmanızı <strong>Taslak Kaydet</strong> ile
+                  saklayıp daha sonra kaldığınız yerden devam edebilirsiniz.
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2.5">
               <button
@@ -1142,9 +1222,9 @@ export default function AuditRunnerPage({
               </button>
               <button
                 type="button"
-                disabled={isCompleting}
+                disabled={isCompleting || unansweredCount > 0}
                 onClick={handleCompleteAudit}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all flex items-center gap-2"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isCompleting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

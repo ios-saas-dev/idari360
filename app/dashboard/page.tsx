@@ -71,9 +71,9 @@ export default function DashboardPage() {
       color: 'bg-purple-600 text-white',
     }] : []),
     { title: 'Yeni Talep Oluştur', href: '/dashboard/requests/new', icon: Plus, color: 'bg-blue-500 text-white' },
-    { title: 'Servis Denetim Formu', href: '/dashboard/shuttle/audit', icon: Bus, color: 'bg-blue-100 text-blue-600' },
-    { title: 'Yemekhane Denetim Formu', href: '/dashboard/cafeteria/audit', icon: UtensilsCrossed, color: 'bg-green-100 text-green-600' },
-    { title: 'Temizlik Denetim Formu', href: '/dashboard/cleaning/audit', icon: Sparkles, color: 'bg-purple-100 text-purple-600' },
+    { title: 'Servis Denetim Formu', href: '/dashboard/audits?module=shuttle', icon: Bus, color: 'bg-blue-100 text-blue-600' },
+    { title: 'Yemekhane Denetim Formu', href: '/dashboard/audits?module=catering', icon: UtensilsCrossed, color: 'bg-green-100 text-green-600' },
+    { title: 'Temizlik Denetim Formu', href: '/dashboard/audits?module=cleaning', icon: Sparkles, color: 'bg-purple-100 text-purple-600' },
     { title: 'Stok Takip Desbord', href: '/dashboard/assets', icon: Package, color: 'bg-amber-100 text-amber-600' },
   ];
 

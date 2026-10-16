@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Loader2,
   Calendar,
+  Bus,
   ClipboardCheck,
   FileText,
   Camera,
@@ -68,6 +69,13 @@ interface ActionDetail {
     percentage?: number;
     status?: string;
     audit_type?: { id: string; name: string; module?: string } | null;
+    service_vehicle?: {
+      id: string;
+      plate_number: string;
+      route_name?: string | null;
+      brand?: string | null;
+      model?: string | null;
+    } | null;
   } | null;
   audit_answer?: {
     id?: string;
@@ -544,6 +552,21 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
                       </div>
                     )}
                   </div>
+                  {action.audit.service_vehicle && (
+                    <div className="flex items-center gap-2 bg-white/70 rounded-lg border border-indigo-100 px-3 py-2">
+                      <Bus className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <div className="text-xs">
+                        <span className="font-semibold text-slate-700">Araç: </span>
+                        <span className="font-mono font-bold text-indigo-800 tracking-wider">
+                          {action.audit.service_vehicle.plate_number}
+                        </span>
+                        <span className="text-slate-600">
+                          {' '}
+                          • Hat: {action.audit.service_vehicle.route_name || 'Atanmamış'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <Link
                     href={`/dashboard/audits/${action.audit.id}`}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"

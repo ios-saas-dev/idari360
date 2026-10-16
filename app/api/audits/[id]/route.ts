@@ -26,6 +26,7 @@ export async function GET(
       *,
       facility:facilities(id, name, city),
       auditor:profiles!audits_auditor_id_fkey(id, full_name, email),
+      service_vehicle:service_vehicles(id, plate_number, route_name, brand, model),
       audit_type:audit_types(
         id,
         name,
@@ -104,6 +105,7 @@ export async function PATCH(
     .from('audits')
     .select(`
       *,
+      service_vehicle:service_vehicles(id, plate_number, route_name, brand, model),
       audit_type:audit_types(
         id,
         module,
@@ -124,10 +126,22 @@ export async function PATCH(
   }
 
   // 2. Puan Hesaplama Algoritması (Excel kurallarına göre kategori ağırlıklı 100 puan üzerinden)
+  //    Kısmi güncellemelerde (ör. yönetici onayı) kayıtlı cevaplar korunur: gövdede
+  //    gönderilen cevap yoksa kayıtlı cevap, o da yoksa N/A (yanıtlanmadı) kabul edilir.
   const categories = currentAudit.audit_type?.categories || [];
   const answersMap = new Map<string, any>();
   for (const ans of answers) {
     answersMap.set(ans.question_id, ans);
+  }
+
+  const { data: existingAnswerRows } = await supabase
+    .from('audit_answers')
+    .select('question_id, answer, note, due_date, photo_url')
+    .eq('audit_id', id);
+
+  const existingAnswersMap = new Map<string, any>();
+  for (const row of existingAnswerRows || []) {
+    existingAnswersMap.set(row.question_id, row);
   }
 
   let totalAuditEarnedScore = 0;
@@ -140,7 +154,8 @@ export async function PATCH(
 
     for (const q of questions) {
       const ans = answersMap.get(q.id);
-      const answerVal = ans?.answer || 'evet';
+      const prev = existingAnswersMap.get(q.id);
+      const answerVal = ans?.answer ?? prev?.answer ?? 'na';
       const questionWeight = Number(q.max_points) || 1;
 
       let questionScore = 0;
@@ -152,7 +167,7 @@ export async function PATCH(
         questionScore = 0;
         catMaxPoints += questionWeight;
       } else if (answerVal === 'na') {
-        // N/A seçeneği paydaya dahil edilmez veya sıfır etki eder
+        // N/A = yanıtlanmadı; puanlamaya dahil edilmez
         questionScore = 0;
       }
 
@@ -161,9 +176,9 @@ export async function PATCH(
         question_id: q.id,
         answer: answerVal,
         score: questionScore,
-        note: ans?.note || null,
-        due_date: ans?.due_date || null,
-        photo_url: ans?.photo_url || null,
+        note: ans ? ans.note || null : prev?.note || null,
+        due_date: ans ? ans.due_date || null : prev?.due_date || null,
+        photo_url: ans ? ans.photo_url || null : prev?.photo_url || null,
       });
     }
 
@@ -172,6 +187,23 @@ export async function PATCH(
     const catProportion = catMaxPoints > 0 ? catEarnedPoints / catMaxPoints : 1;
     const catScore = Math.round(catProportion * categoryMaxWeight * 100) / 100;
     totalAuditEarnedScore += catScore;
+  }
+
+  // 2.1 Tamamlama kuralı: Tüm sorular Evet/Hayır olarak yanıtlanmadan denetim tamamlanamaz.
+  //     N/A (yanıtlanmadı) durumundaki sorular varken yalnızca taslak olarak kaydedilebilir.
+  if (status === 'completed') {
+    const unansweredCount = calculatedAnswers.filter(
+      (a) => a.answer !== 'evet' && a.answer !== 'hayir'
+    ).length;
+
+    if (unansweredCount > 0) {
+      return NextResponse.json(
+        {
+          error: `Denetim tamamlanamaz: ${unansweredCount} soru hâlâ N/A (yanıtlanmadı) durumunda. Tüm soruları Evet veya Hayır olarak yanıtlayın; ara kaydınızı "Taslak Kaydet" ile saklayabilirsiniz.`,
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // 3. audit_answers tablosuna toplu upsert
@@ -240,6 +272,17 @@ export async function PATCH(
             ansItem.due_date ||
             new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+          // Araç bilgisi: servis denetimlerinde aksiyon, denetlenen araca bağlanır
+          const vehicle = currentAudit.service_vehicle || null;
+          const vehicleTitlePrefix = vehicle ? `${vehicle.plate_number} • ` : '';
+          const vehicleDescBlock = vehicle
+            ? `\n\nAraç: ${vehicle.plate_number}${
+                vehicle.brand || vehicle.model
+                  ? ` (${[vehicle.brand, vehicle.model].filter(Boolean).join(' ')})`
+                  : ''
+              }${vehicle.route_name ? `\nHat / Güzergah: ${vehicle.route_name}` : ''}`
+            : '';
+
           // Aksiyonu oluştur
           const { data: newAction } = await supabase
             .from('actions')
@@ -249,9 +292,10 @@ export async function PATCH(
               audit_id: id,
               audit_question_id: ansItem.question_id,
               audit_answer_id: existingAnswer?.id || null,
+              service_vehicle_id: vehicle?.id || null,
               action_number,
-              title: `[Uygunsuzluk] ${qText.slice(0, 150)}`,
-              description: `Denetim sırasında uygunsuzluk tespit edildi.\n\nBulgu / Not: ${
+              title: `[Uygunsuzluk] ${vehicleTitlePrefix}${qText.slice(0, 140)}`,
+              description: `Denetim sırasında uygunsuzluk tespit edildi.${vehicleDescBlock}\n\nBulgu / Not: ${
                 ansItem.note || 'Açıklama belirtilmedi.'
               }`,
               category: currentAudit.audit_type?.module || 'diger',
@@ -306,6 +350,7 @@ export async function PATCH(
       *,
       facility:facilities(id, name, city),
       auditor:profiles!audits_auditor_id_fkey(id, full_name, email),
+      service_vehicle:service_vehicles(id, plate_number, route_name, brand, model),
       audit_type:audit_types(id, name, module)
     `)
     .single();

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('audits')
-    .select(`*, audit_type:audit_types(id, name, module), auditor:profiles!audits_auditor_id_fkey(id, full_name), facility:facilities(id, name, city)`, { count: 'exact' })
+    .select(`*, audit_type:audit_types(id, name, module), auditor:profiles!audits_auditor_id_fkey(id, full_name), facility:facilities(id, name, city), service_vehicle:service_vehicles(id, plate_number, route_name, brand, model)`, { count: 'exact' })
     .eq('company_id', profile.company_id)
     .order('audit_date', { ascending: false })
     .range((page-1)*limit, page*limit-1);
@@ -40,16 +40,53 @@ export async function POST(request: NextRequest) {
   if (!['super_admin','company_admin','facility_manager','facility_officer'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
 
   const body = await request.json();
-  const { title, audit_type_id, audit_date, notes, facility_id } = body;
+  const { title, audit_type_id, audit_date, notes, facility_id, service_vehicle_id } = body;
   if (!audit_type_id || !audit_date) return NextResponse.json({ error: 'Eksik alanlar' }, { status: 400 });
 
-  const { data: auditType } = await supabase.from('audit_types').select('name, max_score').eq('id', audit_type_id).single();
+  const { data: auditType } = await supabase.from('audit_types').select('name, module, max_score').eq('id', audit_type_id).single();
 
-  const auditTitle = title?.trim() || auditType?.name || 'Denetim';
+  // Servis denetimleri araç bazlıdır: seçilen araç doğrulanır ve denetim araca bağlanır
+  const isShuttleAudit = auditType?.module === 'servis' || auditType?.module === 'shuttle';
+  let vehicle: {
+    id: string;
+    plate_number: string;
+    route_name: string | null;
+    brand: string | null;
+    model: string | null;
+    facility_id: string;
+    company_id: string;
+  } | null = null;
+
+  if (service_vehicle_id) {
+    const { data: veh } = await supabase
+      .from('service_vehicles')
+      .select('id, plate_number, route_name, brand, model, facility_id, company_id')
+      .eq('id', service_vehicle_id)
+      .single();
+
+    if (!veh || veh.company_id !== profile!.company_id) {
+      return NextResponse.json({ error: 'Seçilen servis aracı bulunamadı veya yetkiniz yok.' }, { status: 400 });
+    }
+    vehicle = veh;
+  }
+
+  if (isShuttleAudit && !vehicle) {
+    return NextResponse.json({ error: 'Servis denetimi için denetlenecek araç seçilmelidir.' }, { status: 400 });
+  }
+
+  const resolvedFacilityId = vehicle?.facility_id || facility_id || profile!.facility_id;
+  if (!resolvedFacilityId) {
+    return NextResponse.json({ error: 'Denetim için tesis bilgisi gereklidir.' }, { status: 400 });
+  }
+
+  const auditTitle =
+    title?.trim() ||
+    (vehicle ? `${auditType?.name || 'Servis Denetimi'} - ${vehicle.plate_number}` : auditType?.name) ||
+    'Denetim';
 
   const { data, error } = await supabase.from('audits').insert({
     company_id: profile!.company_id,
-    facility_id: facility_id || profile!.facility_id,
+    facility_id: resolvedFacilityId,
     audit_type_id,
     auditor_id: user.id,
     title: auditTitle,
@@ -59,6 +96,7 @@ export async function POST(request: NextRequest) {
     percentage: 0,
     status: 'draft',
     notes: notes || '',
+    service_vehicle_id: vehicle?.id || null,
   }).select().single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

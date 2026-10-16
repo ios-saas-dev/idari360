@@ -22,6 +22,7 @@ import {
   User,
   TrendingUp,
   Play,
+  Bus,
   ArrowRight,
 } from 'lucide-react';
 
@@ -35,12 +36,30 @@ interface AuditItem {
   facility_city?: string;
   auditor?: { id: string; full_name: string };
   auditor_name?: string;
+  service_vehicle?: {
+    id: string;
+    plate_number: string;
+    route_name?: string | null;
+    brand?: string | null;
+    model?: string | null;
+  } | null;
   audit_date?: string;
   score?: number | null;
   total_score?: number | null;
   percentage?: number | null;
   status: 'draft' | 'in_progress' | 'completed' | 'approved' | string;
   notes?: string;
+}
+
+interface VehicleOption {
+  id: string;
+  plate_number: string;
+  route_name: string | null;
+  brand: string | null;
+  model: string | null;
+  driver_name: string | null;
+  is_active: boolean;
+  facility_id: string;
 }
 
 export default function AuditsPage() {
@@ -51,6 +70,9 @@ export default function AuditsPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [auditTypes, setAuditTypes] = useState<Array<{ id: string; name: string; module: string }>>([]);
   const [facilities, setFacilities] = useState<Array<{ id: string; name: string; city: string }>>([]);
+  const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
+  const [startingVehicleId, setStartingVehicleId] = useState<string | null>(null);
+  const [vehicleStartError, setVehicleStartError] = useState<string | null>(null);
   
   // Filters
   const [selectedModule, setSelectedModule] = useState<string>('all');
@@ -70,6 +92,7 @@ export default function AuditsPage() {
     title: '',
     audit_type_id: '',
     facility_id: '',
+    service_vehicle_id: '',
     audit_date: new Date().toISOString().split('T')[0],
     notes: '',
   });
@@ -113,6 +136,35 @@ export default function AuditsPage() {
         if (facs && facs.length > 0) {
           setFacilities(facs);
           setFormData((prev) => ({ ...prev, facility_id: facs[0].id }));
+        }
+
+        // Load service vehicles (araç bazlı servis denetimi)
+        const { data: vehs } = await supabase
+          .from('service_vehicles')
+          .select('id, plate_number, route_name, brand, model, driver_name, is_active, facility_id')
+          .order('plate_number');
+        if (vehs) {
+          setVehicles(vehs as VehicleOption[]);
+        }
+
+        // URL'den modül filtresi (ör. dashboard kısayolu: /dashboard/audits?module=shuttle)
+        try {
+          const sp = new URLSearchParams(window.location.search);
+          const mod = (sp.get('module') || '').toLowerCase();
+          const aliasMap: Record<string, string> = {
+            shuttle: 'shuttle',
+            servis: 'shuttle',
+            catering: 'catering',
+            yemekhane: 'catering',
+            cleaning: 'cleaning',
+            temizlik: 'cleaning',
+            security: 'security',
+            guvenlik: 'security',
+            'güvenlik': 'security',
+          };
+          if (mod && aliasMap[mod]) setSelectedModule(aliasMap[mod]);
+        } catch {
+          // yoksay
         }
       } catch (err) {
         console.error('Meta veriler alınamadı:', err);
@@ -158,10 +210,22 @@ export default function AuditsPage() {
   // Permissions: Managers and officers can create audits
   const canCreate = ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(userRole);
 
+  // Seçili denetim türü servis modülü mü? (Servis denetimleri araç bazlıdır)
+  const selectedAuditType = auditTypes.find((t) => t.id === formData.audit_type_id);
+  const isShuttleSelected =
+    selectedAuditType?.module === 'servis' || selectedAuditType?.module === 'shuttle';
+  const shuttleAuditTypes = auditTypes.filter(
+    (t) => t.module === 'servis' || t.module === 'shuttle'
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.audit_type_id) {
       setModalError('Lütfen bir denetim türü seçiniz.');
+      return;
+    }
+    if (isShuttleSelected && !formData.service_vehicle_id) {
+      setModalError('Servis denetimi için denetlenecek araç seçilmelidir.');
       return;
     }
 
@@ -176,6 +240,7 @@ export default function AuditsPage() {
           title: formData.title,
           audit_type_id: formData.audit_type_id,
           facility_id: formData.facility_id || null,
+          service_vehicle_id: formData.service_vehicle_id || null,
           audit_date: formData.audit_date,
           notes: formData.notes,
         }),
@@ -198,6 +263,50 @@ export default function AuditsPage() {
       setModalError(err.message || 'Denetim oluşturulurken bir sorun oluştu.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Servis aracından hızlı denetim başlatma (araç bazlı denetim akışı)
+  const startVehicleAudit = async (vehicle: VehicleOption) => {
+    const shuttleType = shuttleAuditTypes[0];
+    if (!shuttleType) {
+      setVehicleStartError('Sistemde tanımlı bir servis denetim türü bulunamadı.');
+      return;
+    }
+
+    setStartingVehicleId(vehicle.id);
+    setVehicleStartError(null);
+
+    try {
+      const res = await fetch('/api/audits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audit_type_id: shuttleType.id,
+          service_vehicle_id: vehicle.id,
+          facility_id: vehicle.facility_id,
+          audit_date: new Date().toISOString().split('T')[0],
+          title: `Servis Denetimi - ${vehicle.plate_number}${
+            vehicle.route_name ? ` (${vehicle.route_name})` : ''
+          }`,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Denetim başlatılamadı.');
+      }
+
+      const json = await res.json();
+      if (json.data?.id) {
+        router.push(`/dashboard/audits/${json.data.id}`);
+      } else {
+        await fetchAudits();
+      }
+    } catch (err: any) {
+      setVehicleStartError(err.message || 'Denetim başlatılırken bir sorun oluştu.');
+    } finally {
+      setStartingVehicleId(null);
     }
   };
 
@@ -274,7 +383,7 @@ export default function AuditsPage() {
     // Module check
     if (selectedModule !== 'all') {
       const match =
-        (selectedModule === 'catering' && (mod === 'catering' || mod === 'yemekhane')) ||
+        (selectedModule === 'catering' && (mod === 'catering' || mod.startsWith('yemekhane'))) ||
         (selectedModule === 'shuttle' && (mod === 'shuttle' || mod === 'servis')) ||
         (selectedModule === 'cleaning' && (mod === 'cleaning' || mod === 'temizlik')) ||
         (selectedModule === 'security' && (mod === 'security' || mod === 'guvenlik' || mod === 'güvenlik'));
@@ -478,6 +587,102 @@ export default function AuditsPage() {
         </div>
       </div>
 
+      {/* Servis Araçları → Araç Bazlı Denetim (Servis modülü seçilince görünür) */}
+      {selectedModule === 'shuttle' && (
+        <div className="bg-white rounded-2xl border border-indigo-200/70 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-indigo-100 bg-indigo-50/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl border border-indigo-200/60">
+                <Bus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Servis Araçları — Araç Bazlı Denetim</h3>
+                <p className="text-xs text-slate-500">
+                  Denetlemek istediğiniz aracı seçin; hat ve plaka bilgisi denetim boyunca araca bağlı ilerler.
+                </p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold text-indigo-700 bg-indigo-100/80 border border-indigo-200 px-3 py-1 rounded-full self-start sm:self-auto">
+              {vehicles.length} Araç
+            </span>
+          </div>
+
+          {vehicleStartError && (
+            <div className="mx-5 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-500" />
+              <span>{vehicleStartError}</span>
+            </div>
+          )}
+
+          {vehicles.length === 0 ? (
+            <div className="p-8 text-center">
+              <Bus className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-600 font-medium">Henüz servis aracı kayıtlı değil</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Araç eklemek için{' '}
+                <Link href="/dashboard/shuttle" className="text-blue-600 font-semibold hover:underline">
+                  Servis Yönetimi
+                </Link>{' '}
+                sayfasını kullanın (tek tek ekleme veya Excel ile aktarım).
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {vehicles.map((v) => (
+                <div
+                  key={v.id}
+                  className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-slate-50/60 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={`p-2.5 rounded-xl border shrink-0 ${
+                        v.is_active
+                          ? 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                          : 'bg-slate-100 text-slate-400 border-slate-200'
+                      }`}
+                    >
+                      <Bus className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-bold text-slate-900 whitespace-nowrap">
+                          Hat: {v.route_name || 'Atanmamış'}
+                        </span>
+                        <span className="inline-flex items-center text-xs font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/70 px-2.5 py-0.5 rounded-lg tracking-wider">
+                          {v.plate_number}
+                        </span>
+                        {!v.is_active && (
+                          <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                            Pasif
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5 truncate">
+                        {[v.brand, v.model].filter(Boolean).join(' ') || 'Marka / model belirtilmedi'}
+                        {v.driver_name ? ` • Şoför: ${v.driver_name}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => startVehicleAudit(v)}
+                    disabled={startingVehicleId === v.id}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm shadow-indigo-500/20 transition-colors disabled:opacity-60 shrink-0"
+                  >
+                    {startingVehicleId === v.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                    <span>Denetimi Başlat</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Table / Grid */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         {loading ? (
@@ -535,6 +740,16 @@ export default function AuditsPage() {
                           <span>{item.title}</span>
                           <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-600" />
                         </Link>
+                        {item.service_vehicle && (
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-indigo-700">
+                            <Bus className="w-3 h-3 shrink-0" />
+                            <span>Hat: {item.service_vehicle.route_name || 'Atanmamış'}</span>
+                            <span className="text-indigo-300">•</span>
+                            <span className="font-mono font-bold tracking-wider">
+                              {item.service_vehicle.plate_number}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         <span
@@ -688,6 +903,53 @@ export default function AuditsPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Servis Denetimi ise: Araç Seçimi (zorunlu — araç bazlı denetim) */}
+              {isShuttleSelected && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Denetlenecek Servis Aracı <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={formData.service_vehicle_id}
+                    onChange={(e) => {
+                      const veh = vehicles.find((v) => v.id === e.target.value);
+                      setFormData({
+                        ...formData,
+                        service_vehicle_id: e.target.value,
+                        facility_id: veh ? veh.facility_id : formData.facility_id,
+                        title: veh
+                          ? `Servis Denetimi - ${veh.plate_number}${
+                              veh.route_name ? ` (${veh.route_name})` : ''
+                            }`
+                          : formData.title,
+                      });
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 bg-white"
+                  >
+                    <option value="">Araç seçiniz...</option>
+                    {vehicles.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        Hat: {v.route_name || 'Atanmamış'} — {v.plate_number}
+                        {v.is_active ? '' : ' (Pasif)'}
+                      </option>
+                    ))}
+                  </select>
+                  {vehicles.length === 0 ? (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      Sistemde kayıtlı servis aracı yok. Önce{' '}
+                      <Link href="/dashboard/shuttle" className="font-semibold underline">
+                        Servis Yönetimi
+                      </Link>{' '}
+                      sayfasından araç ekleyin.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Denetim, seçilen aracın hattı ve plakasıyla eşleşir; uygunsuzluk aksiyonları da bu araca bağlanır.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Tesis & Lokasyon */}
               <div>
@@ -846,6 +1108,22 @@ export default function AuditsPage() {
                   </p>
                 </div>
               </div>
+
+              {selectedAudit.service_vehicle && (
+                <div className="bg-indigo-50/70 border border-indigo-200/70 rounded-xl p-3 flex items-center gap-2.5">
+                  <Bus className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <div className="text-xs">
+                    <span className="font-semibold text-indigo-900">Denetlenen Araç: </span>
+                    <span className="font-mono font-bold text-indigo-800 tracking-wider">
+                      {selectedAudit.service_vehicle.plate_number}
+                    </span>
+                    <span className="text-indigo-700">
+                      {' '}
+                      • Hat: {selectedAudit.service_vehicle.route_name || 'Atanmamış'}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {selectedAudit.notes && (
                 <div className="pt-2">
