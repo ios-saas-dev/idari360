@@ -26,10 +26,10 @@ import {
   ChevronRight,
   TrendingUp,
   Loader2,
-  Eye,
   CheckCircle,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import PhotoEvidenceUploader from '@/components/photo-evidence-uploader';
 
 interface Question {
   id: string;
@@ -1039,35 +1039,21 @@ export default function AuditRunnerPage({
                               </div>
                             </div>
 
-                            {/* Fotoğraf / Kanıt URL */}
+                            {/* Fotoğraf / Kanıt (cihazdan görsel yükleme) */}
                             <div className="space-y-1 pt-1">
                               <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
                                 <Camera className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Fotoğraf / Kanıt Linki:</span>
+                                <span>Fotoğraf / Kanıt:</span>
                               </label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  disabled={isCompleted}
-                                  value={state.photo_url}
-                                  onChange={(e) =>
-                                    handlePhotoUrlChange(q.id, e.target.value)
-                                  }
-                                  placeholder="https://... uygunsuzluğa ait fotoğraf veya kanıt URL adresi"
-                                  className="flex-1 text-xs rounded-lg border border-slate-200 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 disabled:bg-slate-100"
-                                />
-                                {state.photo_url && (
-                                  <a
-                                    href={state.photo_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors shrink-0"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                    <span>Görüntüle</span>
-                                  </a>
-                                )}
-                              </div>
+                              <PhotoEvidenceUploader
+                                context="audit"
+                                auditId={auditId}
+                                questionId={q.id}
+                                currentUrl={state.photo_url}
+                                disabled={isCompleted}
+                                onChange={(url) => handlePhotoUrlChange(q.id, url)}
+                                helperText="Uygunsuzluğa ait görseli yükleyin (JPG, PNG, WEBP) — en fazla 10 MB"
+                              />
                             </div>
                           </div>
                         )}
