@@ -23,10 +23,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!['super_admin','company_admin','facility_manager'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
   const { id } = await params;
   const body = await request.json();
-  const { period_start, period_end, service_quality, timeliness, complaint_management, staff_suitability, audit_results, action_closure } = body;
+  const { period_start, period_end, service_quality, timeliness, complaint_management, staff_suitability, audit_results, action_closure, auto_sources } = body;
   
   const scores = [service_quality, timeliness, complaint_management, staff_suitability, audit_results, action_closure].filter((val) => typeof val === 'number' && !isNaN(val));
   const overall_score = scores.length > 0 ? scores.reduce((a: number, b: number) => a + b, 0) / scores.length : 0;
+
+  // Otomatik doldurulan kriterler: { kriter: kaynakKayıtSayısı } — yalnız geçerli anahtarlar saklanır
+  const CRITERIA = ['service_quality', 'timeliness', 'complaint_management', 'staff_suitability', 'audit_results', 'action_closure'];
+  let autoSources: Record<string, number> | null = null;
+  if (auto_sources && typeof auto_sources === 'object' && !Array.isArray(auto_sources)) {
+    const clean: Record<string, number> = {};
+    for (const key of Object.keys(auto_sources)) {
+      const val = (auto_sources as Record<string, unknown>)[key];
+      if (CRITERIA.includes(key) && typeof val === 'number' && isFinite(val) && val >= 0) {
+        clean[key] = Math.floor(val);
+      }
+    }
+    if (Object.keys(clean).length > 0) autoSources = clean;
+  }
 
   const { data, error } = await supabase.from('supplier_scores').insert({
     supplier_id: id,
@@ -39,6 +53,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     action_closure: action_closure || 0,
     overall_score: Math.round(overall_score * 10) / 10,
     scored_by: user.id,
+    auto_sources: autoSources,
   }).select().single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -15,6 +15,10 @@ import {
   Mail,
   CheckCircle2,
   AlertTriangle,
+  Pencil,
+  Trash2,
+  Wand2,
+  Zap,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 
@@ -30,6 +34,7 @@ interface SupplierScore {
   staff_suitability?: number;
   audit_results?: number;
   action_closure?: number;
+  auto_sources?: Record<string, number> | null;
   scorer?: { id: string; full_name: string };
 }
 
@@ -45,6 +50,7 @@ interface Supplier {
   };
   contract_start: string | null;
   contract_end: string | null;
+  is_active: boolean;
   created_at: string;
   supplier_scores?: SupplierScore[];
 }
@@ -57,6 +63,20 @@ const SERVICE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   guvenlik: { label: 'Güvenlik', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   diger: { label: 'Diğer Hizmetler', color: 'bg-slate-50 text-slate-700 border-slate-200' },
 };
+
+/** Geçmiş puanlarda otomatik doldurulan kriter işareti */
+function AutoBadge({ count }: { count?: number }) {
+  if (!count) return null;
+  return (
+    <span
+      className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-100 rounded px-1 align-middle"
+      title={`Verilerden otomatik dolduruldu (${count} kayıt)`}
+    >
+      <Zap className="w-2.5 h-2.5" />
+      oto
+    </span>
+  );
+}
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -81,8 +101,19 @@ export default function SuppliersPage() {
     notes: '',
     contract_start: '',
     contract_end: '',
+    is_active: true,
   });
   const [submittingSupplier, setSubmittingSupplier] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
+  const [deletingSupplier, setDeletingSupplier] = useState(false);
+
+  // Otomatik karne besleme durumları (puan modalı)
+  const [autoSources, setAutoSources] = useState<Record<string, number> | null>(null);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestInfo, setSuggestInfo] = useState<
+    Array<{ key: string; label: string; value: number | null; count: number; note: string }> | null
+  >(null);
 
   // Form states - Add Score
   const [newScore, setNewScore] = useState({
@@ -154,6 +185,8 @@ export default function SuppliersPage() {
       audit_results: 8,
       action_closure: 8,
     });
+    setAutoSources(null);
+    setSuggestInfo(null);
     setIsAddScoreOpen(true);
   };
 
@@ -174,39 +207,149 @@ export default function SuppliersPage() {
     }
   };
 
+  const resetSupplierForm = () => {
+    setNewSupplier({
+      name: '',
+      service_type: 'yemekhane',
+      phone: '',
+      email: '',
+      notes: '',
+      contract_start: '',
+      contract_end: '',
+      is_active: true,
+    });
+  };
+
+  const handleOpenAddSupplier = () => {
+    setEditingSupplier(null);
+    resetSupplierForm();
+    setIsAddSupplierOpen(true);
+  };
+
+  const handleOpenEdit = (supplier: Supplier) => {
+    setEditingSupplier(supplier);
+    setNewSupplier({
+      name: supplier.name,
+      service_type: supplier.service_type,
+      phone: supplier.contact_info?.phone || '',
+      email: supplier.contact_info?.email || '',
+      notes: supplier.contact_info?.notes || '',
+      contract_start: supplier.contract_start || '',
+      contract_end: supplier.contract_end || '',
+      is_active: supplier.is_active !== false,
+    });
+    setIsAddSupplierOpen(true);
+  };
+
+  const closeSupplierModal = () => {
+    setIsAddSupplierOpen(false);
+    setEditingSupplier(null);
+  };
+
+  const handleDeleteSupplier = async () => {
+    if (!deleteTarget) return;
+    try {
+      setDeletingSupplier(true);
+      const res = await fetch(`/api/suppliers/${deleteTarget.id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Tedarikçi silinemedi');
+      setDeleteTarget(null);
+      await fetchSuppliers();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setDeletingSupplier(false);
+    }
+  };
+
+  const AUTO_CRITERIA_LABELS: Record<string, string> = {
+    service_quality: 'Hizmet Kalitesi',
+    timeliness: 'Zamanında Hizmet',
+    complaint_management: 'Şikayet Yönetimi',
+    staff_suitability: 'Personel Uygunluğu',
+    audit_results: 'Denetim Sonuçları',
+    action_closure: 'Aksiyon Kapatma',
+  };
+
+  const handleAutoFill = async () => {
+    if (!selectedSupplier) return;
+    try {
+      setSuggestLoading(true);
+      const res = await fetch(
+        `/api/suppliers/${selectedSupplier.id}/scores/suggest?period_start=${newScore.period_start}&period_end=${newScore.period_end}`
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Otomatik öneriler alınamadı');
+
+      const suggestions = (json.data?.suggestions || {}) as Record<
+        string,
+        { value: number | null; count: number; note: string }
+      >;
+      const nextScore = { ...newScore };
+      const appliedAuto: Record<string, number> = {};
+      const info: Array<{ key: string; label: string; value: number | null; count: number; note: string }> = [];
+
+      for (const key of Object.keys(AUTO_CRITERIA_LABELS)) {
+        const s = suggestions[key];
+        info.push({
+          key,
+          label: AUTO_CRITERIA_LABELS[key],
+          value: s?.value ?? null,
+          count: s?.count ?? 0,
+          note: s?.note || '',
+        });
+        if (s && typeof s.value === 'number') {
+          (nextScore as any)[key] = Math.round(s.value * 2) / 2; // 0.5 adımına yuvarla
+          appliedAuto[key] = s.count;
+        }
+      }
+
+      setNewScore(nextScore);
+      setAutoSources(Object.keys(appliedAuto).length > 0 ? appliedAuto : null);
+      setSuggestInfo(info);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSuggestLoading(false);
+    }
+  };
+
   const handleAddSupplierSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSupplier.name.trim()) return;
 
+    const payload = {
+      name: newSupplier.name,
+      service_type: newSupplier.service_type,
+      contact_info: {
+        phone: newSupplier.phone,
+        email: newSupplier.email,
+        notes: newSupplier.notes,
+      },
+      contract_start: newSupplier.contract_start || null,
+      contract_end: newSupplier.contract_end || null,
+      is_active: newSupplier.is_active,
+    };
+
     try {
       setSubmittingSupplier(true);
-      const res = await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newSupplier.name,
-          service_type: newSupplier.service_type,
-          contact_info: {
-            phone: newSupplier.phone,
-            email: newSupplier.email,
-            notes: newSupplier.notes,
-          },
-          contract_start: newSupplier.contract_start || null,
-          contract_end: newSupplier.contract_end || null,
-        }),
-      });
+      const res = await fetch(
+        editingSupplier ? `/api/suppliers/${editingSupplier.id}` : '/api/suppliers',
+        {
+          method: editingSupplier ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Tedarikçi eklenemedi');
+      if (!res.ok) {
+        throw new Error(
+          data.error || (editingSupplier ? 'Tedarikçi güncellenemedi' : 'Tedarikçi eklenemedi')
+        );
+      }
       setIsAddSupplierOpen(false);
-      setNewSupplier({
-        name: '',
-        service_type: 'yemekhane',
-        phone: '',
-        email: '',
-        notes: '',
-        contract_start: '',
-        contract_end: '',
-      });
+      setEditingSupplier(null);
+      resetSupplierForm();
       await fetchSuppliers();
     } catch (err: any) {
       alert(err.message);
@@ -246,11 +389,14 @@ export default function SuppliersPage() {
           staff_suitability: Number(newScore.staff_suitability),
           audit_results: Number(newScore.audit_results),
           action_closure: Number(newScore.action_closure),
+          auto_sources: autoSources,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Puan eklenemedi');
       setIsAddScoreOpen(false);
+      setAutoSources(null);
+      setSuggestInfo(null);
       await fetchSuppliers();
     } catch (err: any) {
       alert(err.message);
@@ -304,7 +450,7 @@ export default function SuppliersPage() {
 
         {canManage && (
           <button
-            onClick={() => setIsAddSupplierOpen(true)}
+            onClick={handleOpenAddSupplier}
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm transition-colors text-sm"
           >
             <Plus className="w-4 h-4" />
@@ -372,7 +518,7 @@ export default function SuppliersPage() {
           </p>
           {canManage && (
             <button
-              onClick={() => setIsAddSupplierOpen(true)}
+              onClick={handleOpenAddSupplier}
               className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
             >
               <Plus className="w-4 h-4" />
@@ -401,7 +547,9 @@ export default function SuppliersPage() {
             return (
               <div
                 key={supplier.id}
-                className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between"
+                className={`bg-white rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between ${
+                  supplier.is_active === false ? 'border border-slate-200/60 opacity-60' : 'border border-slate-200/80'
+                }`}
               >
                 <div>
                   {/* Card Header */}
@@ -416,6 +564,11 @@ export default function SuppliersPage() {
                         >
                           {badge.label}
                         </span>
+                        {supplier.is_active === false && (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full border font-medium bg-slate-100 text-slate-500 border-slate-200">
+                            Pasif
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -539,13 +692,29 @@ export default function SuppliersPage() {
                   </button>
 
                   {canManage && (
-                    <button
-                      onClick={() => handleOpenAddScore(supplier)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Puan Ekle
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(supplier)}
+                        title="Düzenle"
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(supplier)}
+                        title="Sil"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleOpenAddScore(supplier)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors ml-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Puan Ekle
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -559,9 +728,11 @@ export default function SuppliersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-800">Yeni Tedarikçi Ekle</h3>
+              <h3 className="font-bold text-slate-800">
+                {editingSupplier ? 'Tedarikçiyi Düzenle' : 'Yeni Tedarikçi Ekle'}
+              </h3>
               <button
-                onClick={() => setIsAddSupplierOpen(false)}
+                onClick={closeSupplierModal}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
@@ -653,6 +824,30 @@ export default function SuppliersPage() {
                 </div>
               </div>
 
+              {editingSupplier && (
+                <label className="flex items-center justify-between gap-3 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer">
+                  <span className="text-xs font-semibold text-slate-700">
+                    Tedarikçi Durumu
+                    <span className="block font-normal text-[11px] text-slate-500 mt-0.5">
+                      Pasif tedarikçiler listede soluk görünür.
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2 flex-shrink-0">
+                    <span
+                      className={`text-xs font-medium ${newSupplier.is_active ? 'text-emerald-600' : 'text-slate-400'}`}
+                    >
+                      {newSupplier.is_active ? 'Aktif' : 'Pasif'}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={newSupplier.is_active}
+                      onChange={(e) => setNewSupplier({ ...newSupplier, is_active: e.target.checked })}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                  </span>
+                </label>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Notlar / İletişim Detayları
@@ -669,7 +864,7 @@ export default function SuppliersPage() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsAddSupplierOpen(false)}
+                  onClick={closeSupplierModal}
                   className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
                 >
                   İptal
@@ -680,7 +875,7 @@ export default function SuppliersPage() {
                   className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors disabled:opacity-50"
                 >
                   {submittingSupplier && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Kaydet
+                  {editingSupplier ? 'Güncelle' : 'Kaydet'}
                 </button>
               </div>
             </form>
@@ -735,9 +930,25 @@ export default function SuppliersPage() {
 
               {/* 6 Kriter Puan Girişi */}
               <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200/70">
-                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Alt Kriterler (0 - 10)
-                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Alt Kriterler (0 - 10)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleAutoFill}
+                    disabled={suggestLoading}
+                    title="Denetim, aksiyon, talep ve memnuniyet verilerinden öneri üretir"
+                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {suggestLoading ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="w-3 h-3" />
+                    )}
+                    Verilerden Otomatik Doldur
+                  </button>
+                </div>
 
                 {[
                   { key: 'service_quality', label: 'Hizmet Kalitesi' },
@@ -755,9 +966,16 @@ export default function SuppliersPage() {
                       max="10"
                       step="0.5"
                       value={(newScore as any)[key]}
-                      onChange={(e) =>
-                        setNewScore({ ...newScore, [key]: parseFloat(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setNewScore({ ...newScore, [key]: val });
+                        setAutoSources((prev) => {
+                          if (!prev || !(key in prev)) return prev;
+                          const next = { ...prev };
+                          delete next[key];
+                          return Object.keys(next).length > 0 ? next : null;
+                        });
+                      }}
                       className="w-32 accent-blue-600"
                     />
                     <span className="w-8 text-right font-bold text-sm text-blue-600">
@@ -765,6 +983,31 @@ export default function SuppliersPage() {
                     </span>
                   </div>
                 ))}
+
+                {/* Otomatik Öneri Kaynakları */}
+                {suggestInfo && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 space-y-1.5">
+                    <p className="text-[11px] font-semibold text-slate-600">
+                      Otomatik öneri kaynakları ({newScore.period_start} — {newScore.period_end}):
+                    </p>
+                    {suggestInfo.map((item) => (
+                      <div key={item.key} className="flex items-start justify-between gap-3 text-[11px]">
+                        <span className="text-slate-500 flex-shrink-0">{item.label}</span>
+                        <span className="text-right text-slate-600">
+                          {item.value !== null ? (
+                            <>
+                              <strong className="text-blue-600">{item.value}</strong>
+                              <span className="text-slate-400"> · {item.count} kayıt</span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400">manuel</span>
+                          )}
+                          <span className="block text-[10px] text-slate-400">{item.note}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Hesaplanmış Ortalama */}
                 <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
@@ -859,26 +1102,32 @@ export default function SuppliersPage() {
                           <div>
                             <span className="text-slate-500">Hizmet Kalitesi:</span>{' '}
                             <strong>{score.service_quality ?? '-'}</strong>
+                            <AutoBadge count={score.auto_sources?.service_quality} />
                           </div>
                           <div>
                             <span className="text-slate-500">Zamanlama:</span>{' '}
                             <strong>{score.timeliness ?? '-'}</strong>
+                            <AutoBadge count={score.auto_sources?.timeliness} />
                           </div>
                           <div>
                             <span className="text-slate-500">Şikayet Yön.:</span>{' '}
                             <strong>{score.complaint_management ?? '-'}</strong>
+                            <AutoBadge count={score.auto_sources?.complaint_management} />
                           </div>
                           <div>
                             <span className="text-slate-500">Personel Uygun.:</span>{' '}
                             <strong>{score.staff_suitability ?? '-'}</strong>
+                            <AutoBadge count={score.auto_sources?.staff_suitability} />
                           </div>
                           <div>
                             <span className="text-slate-500">Denetim Sonucu:</span>{' '}
                             <strong>{score.audit_results ?? '-'}</strong>
+                            <AutoBadge count={score.auto_sources?.audit_results} />
                           </div>
                           <div>
                             <span className="text-slate-500">Aksiyon Kapama:</span>{' '}
                             <strong>{score.action_closure ?? '-'}</strong>
+                            <AutoBadge count={score.auto_sources?.action_closure} />
                           </div>
                         </div>
                       </div>
@@ -895,6 +1144,50 @@ export default function SuppliersPage() {
               >
                 Kapat
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Tedarikçi Sil Onayı */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-rose-50">
+              <h3 className="font-bold text-rose-700">Tedarikçiyi Sil</h3>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-slate-700">
+                <strong>{deleteTarget.name}</strong> firması ve tüm puan geçmişi kalıcı olarak
+                silinecek. Bu işlem geri alınamaz.
+              </p>
+              <p className="text-xs text-slate-500">
+                Firma ile çalışmaya devam ediyorsanız silmek yerine düzenleme penceresinden
+                pasife alabilirsiniz.
+              </p>
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleDeleteSupplier}
+                  disabled={deletingSupplier}
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {deletingSupplier && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Kalıcı Sil
+                </button>
+              </div>
             </div>
           </div>
         </div>
