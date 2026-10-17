@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Camera,
   FolderOpen,
@@ -12,8 +12,16 @@ import {
 
 // ─── Kanıt Fotoğrafı Yükleyici ─────────────────────────────────────────────
 // Masaüstü: dosya seçici ile görsel yükleme
-// Mobil:    kamera ile anlık çekim (capture) + albümden görsel seçimi
+// Mobil:    kamera ile anlık çekim (native capture) + albümden görsel seçimi
 // Yalnızca görsel dosyaları kabul edilir (istemci + sunucu + storage katmanı).
+//
+// ⚠ Mobil uyumluluk notu:
+// Dosya girdileri GİZLİ (display:none) tutulup JS ile .click() ÇAĞRILMAZ.
+// Bazı mobil tarayıcılar (özellikle WebKit/Safari ve uygulama içi tarayıcılar)
+// gizli girdilerde programatik tıklamayı ve/veya capture özelliğini sessizce
+// yok sayar (hata vermez, kamera açılmaz). Bunun yerine dokunma hedefi
+// <label> öğesidir ve girdi "sr-only" (görsel gizli ama aktif) tutulur;
+// böylece aktive tamamen native çalışır her cihazda.
 
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|heic|heif)$/i;
@@ -43,8 +51,6 @@ export default function PhotoEvidenceUploader({
   helperText = 'JPG, PNG, WEBP • en fazla 10 MB',
   onChange,
 }: PhotoEvidenceUploaderProps) {
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -59,6 +65,8 @@ export default function PhotoEvidenceUploader({
       // yoksay
     }
   }, []);
+
+  const busy = disabled || uploading;
 
   const handleFile = async (file?: File | null) => {
     if (!file || disabled) return;
@@ -97,37 +105,47 @@ export default function PhotoEvidenceUploader({
       setError(err instanceof Error ? err.message : 'Görsel yüklenemedi.');
     } finally {
       setUploading(false);
-      if (galleryInputRef.current) galleryInputRef.current.value = '';
-      if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Aynı dosyanın tekrar seçilebilmesi için girdiyi hemen sıfırla
+    e.target.value = '';
+    handleFile(file);
+  };
+
   const galleryBtnClass =
-    'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+    'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors select-none';
   const cameraBtnClass =
-    'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+    'inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-colors select-none';
+  const stateClass = busy ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer';
+
+  // Native kamera girdisi (mobilde doğrudan cihaz kamerasını açar)
+  const cameraInput = (
+    <input
+      type="file"
+      accept="image/*"
+      capture="environment"
+      className="sr-only"
+      disabled={busy}
+      onChange={handleInputChange}
+    />
+  );
+
+  // Galeri / dosya seçici girdisi
+  const galleryInput = (
+    <input
+      type="file"
+      accept="image/*"
+      className="sr-only"
+      disabled={busy}
+      onChange={handleInputChange}
+    />
+  );
 
   return (
     <div className="space-y-1.5">
-      {/* Gizli dosya girişleri */}
-      <input
-        ref={galleryInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => handleFile(e.target.files?.[0])}
-      />
-      {isMobile && (
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => handleFile(e.target.files?.[0])}
-        />
-      )}
-
       {currentUrl ? (
         <div className="flex flex-wrap items-start gap-3">
           <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 group">
@@ -155,33 +173,27 @@ export default function PhotoEvidenceUploader({
           {!disabled && (
             <div className="flex flex-col gap-1.5">
               {isMobile && (
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={() => cameraInputRef.current?.click()}
-                  className={cameraBtnClass}
-                >
+                <label className={`${cameraBtnClass} ${stateClass}`}>
+                  {cameraInput}
                   {uploading ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
                     <RefreshCw className="w-3.5 h-3.5" />
                   )}
                   <span>Yeniden Çek</span>
-                </button>
+                </label>
               )}
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={() => galleryInputRef.current?.click()}
-                className={`${galleryBtnClass} bg-white hover:bg-slate-50 text-slate-700 border-slate-200`}
+              <label
+                className={`${galleryBtnClass} bg-white hover:bg-slate-50 text-slate-700 border-slate-200 ${stateClass}`}
               >
+                {galleryInput}
                 {uploading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <ImagePlus className="w-3.5 h-3.5" />
                 )}
                 <span>{isMobile ? 'Albümden Değiştir' : 'Görseli Değiştir'}</span>
-              </button>
+              </label>
             </div>
           )}
 
@@ -197,30 +209,24 @@ export default function PhotoEvidenceUploader({
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           {isMobile && (
-            <button
-              type="button"
-              disabled={disabled || uploading}
-              onClick={() => cameraInputRef.current?.click()}
-              className={cameraBtnClass}
-            >
+            <label className={`${cameraBtnClass} ${stateClass}`}>
+              {cameraInput}
               {uploading ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Camera className="w-3.5 h-3.5" />
               )}
               <span>Kamera ile Çek</span>
-            </button>
+            </label>
           )}
-          <button
-            type="button"
-            disabled={disabled || uploading}
-            onClick={() => galleryInputRef.current?.click()}
+          <label
             className={`${galleryBtnClass} ${
               isMobile
                 ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                 : 'bg-blue-600 hover:bg-blue-700 text-white border-transparent shadow-sm'
-            }`}
+            } ${stateClass}`}
           >
+            {galleryInput}
             {uploading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : isMobile ? (
@@ -229,7 +235,7 @@ export default function PhotoEvidenceUploader({
               <FolderOpen className="w-3.5 h-3.5" />
             )}
             <span>{isMobile ? 'Albümden Seç' : 'Görsel Yükle'}</span>
-          </button>
+          </label>
           {uploading && (
             <span className="text-[11px] text-blue-600 font-medium flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" /> Yükleniyor...
