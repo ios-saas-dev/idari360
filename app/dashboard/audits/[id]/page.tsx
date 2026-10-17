@@ -27,9 +27,11 @@ import {
   TrendingUp,
   Loader2,
   CheckCircle,
+  Trash2,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import PhotoEvidenceUploader from '@/components/photo-evidence-uploader';
+import { getAuditScoreBand } from '@/lib/audit-score';
 
 interface Question {
   id: string;
@@ -125,6 +127,8 @@ export default function AuditRunnerPage({
   const [isSaving, setIsSaving] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Genel görünüm fotoğrafları (Excel: "En az 1 fotoğraf zorunlu") — audit_photos (photo_type='general')
+  const [generalPhotos, setGeneralPhotos] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<{
     text: string;
     type: 'success' | 'error';
@@ -156,6 +160,13 @@ export default function AuditRunnerPage({
         const json = await res.json();
         const auditData: AuditDetail = json.data;
         setAudit(auditData);
+
+        // Genel görünüm fotoğraflarını state'e al
+        setGeneralPhotos(
+          (auditData.photos || [])
+            .filter((p) => p.photo_type === 'general')
+            .map((p) => p.photo_url)
+        );
 
         // Prepopulate answersState
         const defaultDue = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -289,6 +300,19 @@ export default function AuditRunnerPage({
     }).length;
   }, [allQuestions, answersState]);
 
+  // Açıklaması eksik "Hayır" maddeleri — tamamlamak için her uygunsuzluğa açıklama zorunlu
+  const missingNotesCount = useMemo(() => {
+    return Object.values(answersState).filter(
+      (a) => a.answer === 'hayir' && !a.note.trim()
+    ).length;
+  }, [answersState]);
+
+  // En az 1 genel görünüm fotoğrafı zorunlu
+  const hasGeneralPhoto = generalPhotos.length > 0;
+
+  // Puan değerlendirme bandı (UYGUN / TAKİP GEREKİYOR / KRİTİK UYGUNSUZLUK)
+  const scoreBand = getAuditScoreBand(scoreBreakdown.totalScore);
+
   // Handle Question Answer Change
   const handleAnswerSelect = (
     questionId: string,
@@ -355,6 +379,7 @@ export default function AuditRunnerPage({
         body: JSON.stringify({
           status: 'in_progress',
           answers: answersPayload,
+          general_photos: generalPhotos,
         }),
       });
 
@@ -401,6 +426,7 @@ export default function AuditRunnerPage({
         body: JSON.stringify({
           status: 'completed',
           answers: answersPayload,
+          general_photos: generalPhotos,
         }),
       });
 
@@ -411,7 +437,7 @@ export default function AuditRunnerPage({
 
       setShowConfirmModal(false);
       setToastMessage({
-        text: 'Denetim başarıyla tamamlandı! Uygunsuzluklar için aksiyonlar oluşturuldu.',
+        text: 'Denetim başarıyla tamamlandı! Uygunsuzluklar için aksiyonlar oluşturuldu ve sonuç yöneticilere bildirildi.',
         type: 'success',
       });
 
@@ -711,12 +737,8 @@ export default function AuditRunnerPage({
               <div className="text-2xl font-black tracking-tight mt-0.5">
                 %{scoreBreakdown.totalScore}
               </div>
-              <div className="text-xs font-medium opacity-80 mt-0.5">
-                {scoreBreakdown.totalScore >= 85
-                  ? '🌟 Mükemmel Seviye'
-                  : scoreBreakdown.totalScore >= 70
-                  ? '✔️ Başarılı / Kabul Edilebilir'
-                  : '⚠️ İyileştirme Gerekli'}
+              <div className="text-[11px] font-black uppercase tracking-wider mt-0.5 opacity-90">
+                {scoreBand?.label}
               </div>
             </div>
 
@@ -801,6 +823,104 @@ export default function AuditRunnerPage({
             })}
           </div>
         </div>
+      </div>
+
+      {/* Genel Görünüm Fotoğrafı (Excel kuralı: en az 1 fotoğraf zorunlu) */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm print:break-inside-avoid">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`p-2 rounded-xl border ${
+                hasGeneralPhoto
+                  ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                  : 'bg-blue-50 text-blue-600 border-blue-100'
+              }`}
+            >
+              <Camera className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                Genel Görünüm Fotoğrafı
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Sahanın genel görünümü — denetim tamamlanırken en az 1 fotoğraf
+                zorunludur.
+              </p>
+            </div>
+          </div>
+          {!isCompleted && (
+            <span
+              className={`text-[10px] font-bold px-2 py-1 rounded-md border ${
+                hasGeneralPhoto
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-rose-50 text-rose-700 border-rose-200'
+              }`}
+            >
+              {hasGeneralPhoto
+                ? `✓ ${generalPhotos.length} Fotoğraf Yüklendi`
+                : '* Zorunlu'}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-start gap-3">
+          {generalPhotos.map((url, idx) => (
+            <div
+              key={`${url}-${idx}`}
+              className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-xs"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt={`Genel görünüm ${idx + 1}`}
+                className="h-28 w-auto max-w-[260px] object-cover"
+              />
+              {!isCompleted && (
+                <button
+                  type="button"
+                  title="Fotoğrafı kaldır"
+                  onClick={() =>
+                    setGeneralPhotos((prev) => prev.filter((_, i) => i !== idx))
+                  }
+                  className="absolute top-1 right-1 p-1.5 bg-white/95 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg border border-slate-200 shadow-sm transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+
+          {!isCompleted && generalPhotos.length < 3 && (
+            <div className="min-w-[220px]">
+              <PhotoEvidenceUploader
+                context="audit"
+                auditId={auditId}
+                currentUrl=""
+                disabled={isCompleted}
+                onChange={(url) => {
+                  if (url) {
+                    setGeneralPhotos((prev) =>
+                      prev.includes(url) ? prev : [...prev, url]
+                    );
+                  }
+                }}
+                helperText=""
+              />
+            </div>
+          )}
+
+          {generalPhotos.length === 0 && isCompleted && (
+            <p className="text-xs text-slate-400 italic">
+              Bu denetim için genel görünüm fotoğrafı yüklenmemiş.
+            </p>
+          )}
+        </div>
+
+        {!isCompleted && generalPhotos.length > 0 && generalPhotos.length < 3 && (
+          <p className="text-[10px] text-slate-400 mt-2">
+            İsteğe bağlı: en fazla 3 genel görünüm fotoğrafı ekleyebilirsiniz.
+          </p>
+        )}
       </div>
 
       {/* Category Filter Tabs */}
@@ -1146,6 +1266,14 @@ export default function AuditRunnerPage({
                 </span>
               </div>
               <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Genel Değerlendirme:</span>
+                <span
+                  className={`font-bold px-2 py-0.5 rounded-md border text-[10px] uppercase tracking-wide ${scoreBand?.chipClass || ''}`}
+                >
+                  {scoreBand?.label}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
                 <span className="text-slate-500">
                   Tespit Edilen Uygunsuzluk ("Hayır"):
                 </span>
@@ -1161,6 +1289,30 @@ export default function AuditRunnerPage({
                   }`}
                 >
                   {unansweredCount} Adet
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">
+                  Açıklaması Eksik Uygunsuzluk:
+                </span>
+                <span
+                  className={`font-bold ${
+                    missingNotesCount > 0 ? 'text-amber-600' : 'text-emerald-600'
+                  }`}
+                >
+                  {missingNotesCount} Adet
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Genel Görünüm Fotoğrafı:</span>
+                <span
+                  className={`font-bold ${
+                    hasGeneralPhoto ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
+                  {hasGeneralPhoto
+                    ? `✓ ${generalPhotos.length} Fotoğraf`
+                    : '⚠ Eksik (Zorunlu)'}
                 </span>
               </div>
               {scoreBreakdown.nonConformitiesCount > 0 && (
@@ -1197,6 +1349,31 @@ export default function AuditRunnerPage({
               </div>
             )}
 
+            {!hasGeneralPhoto && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+                <Camera className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-rose-800">
+                  <strong>Genel görünüm fotoğrafı zorunludur.</strong> Denetimi
+                  tamamlamadan önce formun üst kısmındaki{" "}
+                  <strong>Genel Görünüm Fotoğrafı</strong> bölümünden sahanın
+                  genel görünümüne ait en az 1 fotoğraf yükleyin.
+                </div>
+              </div>
+            )}
+
+            {missingNotesCount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 mb-4 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <strong>
+                    {missingNotesCount} uygunsuzluk ("Hayır") maddesinin açıklaması
+                    eksik.
+                  </strong>{' '}
+                  Tamamlamak için her uygunsuzluğa tespit açıklaması yazın.
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2.5">
               <button
                 type="button"
@@ -1208,7 +1385,12 @@ export default function AuditRunnerPage({
               </button>
               <button
                 type="button"
-                disabled={isCompleting || unansweredCount > 0}
+                disabled={
+                  isCompleting ||
+                  unansweredCount > 0 ||
+                  missingNotesCount > 0 ||
+                  !hasGeneralPhoto
+                }
                 onClick={handleCompleteAudit}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >

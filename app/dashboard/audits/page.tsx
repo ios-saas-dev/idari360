@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { getAuditScoreBand } from '@/lib/audit-score';
 import {
   ShieldCheck,
   ClipboardList,
@@ -729,6 +730,10 @@ export default function AuditsPage() {
                   const modBadge = getModuleBadge(item.module || 'catering');
                   const stBadge = getStatusBadge(item.status);
                   const score = item.score ?? 0;
+                  const band = getAuditScoreBand(
+                    item.score === null || item.score === undefined ? null : item.score
+                  );
+                  const isFinal = item.status === 'completed' || item.status === 'approved';
 
                     return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
@@ -785,11 +790,7 @@ export default function AuditsPage() {
                             <div className="w-16 bg-slate-100 rounded-full h-2 overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${
-                                  score >= 80
-                                    ? 'bg-emerald-500'
-                                    : score >= 60
-                                    ? 'bg-blue-500'
-                                    : 'bg-amber-500'
+                                  band?.barClass ?? 'bg-slate-400'
                                 }`}
                                 style={{ width: `${Math.min(score, 100)}%` }}
                               />
@@ -797,6 +798,13 @@ export default function AuditsPage() {
                             <span className="text-xs font-semibold text-slate-700">
                               %{score}
                             </span>
+                            {band && isFinal && (
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wide ${band.chipClass}`}
+                              >
+                                {band.label}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <span className="text-xs text-slate-400">-</span>

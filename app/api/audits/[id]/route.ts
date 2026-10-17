@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { sendAuditCompletedEmail } from '@/lib/email';
 
 export async function GET(
   request: NextRequest,
@@ -98,13 +99,21 @@ export async function PATCH(
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
 
   const body = await request.json();
-  const { title, notes, status, answers = [] } = body;
+  const { title, notes, status, answers = [], general_photos: generalPhotosInput } = body;
+
+  // Genel görünüm fotoğrafları (opsiyonel gövde alanı; gönderildiyse senkronize edilir)
+  const generalPhotoUrls: string[] | null = Array.isArray(generalPhotosInput)
+    ? (generalPhotosInput as unknown[]).filter(
+        (u): u is string => typeof u === 'string' && u.trim().length > 0
+      )
+    : null;
 
   // 1. Mevcut denetim kaydını çek
   const { data: currentAudit, error: fetchErr } = await supabase
     .from('audits')
     .select(`
       *,
+      facility:facilities(id, name, city),
       service_vehicle:service_vehicles(id, plate_number, route_name, brand, model),
       audit_type:audit_types(
         id,
@@ -204,6 +213,42 @@ export async function PATCH(
         { status: 400 }
       );
     }
+
+    // 2.2 "Hayır" (uygunsuzluk) maddelerinde açıklama zorunlu — Excel kuralı:
+    //     "Eğer 'hayır' seçeneği seçildi ise açıklama yazma alanı ve deadline kutucuğu açılmalı."
+    const missingNoteCount = calculatedAnswers.filter(
+      (a) => a.answer === 'hayir' && !(a.note && String(a.note).trim())
+    ).length;
+
+    if (missingNoteCount > 0) {
+      return NextResponse.json(
+        {
+          error: `Denetim tamamlanamaz: ${missingNoteCount} uygunsuzluk ("Hayır") maddesi için açıklama zorunludur. Lütfen her uygunsuzluğun tespit açıklamasını yazın.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // 2.3 En az 1 genel görünüm fotoğrafı zorunlu — Excel kuralı: "En az 1 fotoğraf zorunlu"
+    let generalPhotoCount = generalPhotoUrls ? generalPhotoUrls.length : 0;
+    if (generalPhotoUrls === null) {
+      const { count } = await supabase
+        .from('audit_photos')
+        .select('id', { count: 'exact', head: true })
+        .eq('audit_id', id)
+        .eq('photo_type', 'general');
+      generalPhotoCount = count || 0;
+    }
+
+    if (generalPhotoCount < 1) {
+      return NextResponse.json(
+        {
+          error:
+            'Denetim tamamlanamaz: En az 1 genel görünüm fotoğrafı yüklemek zorunludur. Fotoğrafı denetim formundaki "Genel Görünüm Fotoğrafı" bölümünden ekleyin.',
+        },
+        { status: 400 }
+      );
+    }
   }
 
   // 3. audit_answers tablosuna toplu upsert
@@ -220,6 +265,28 @@ export async function PATCH(
       },
       { onConflict: 'audit_id,question_id' }
     );
+  }
+
+  // 3.1 Genel görünüm fotoğraflarını senkronize et (gövdede gönderildiyse)
+  if (generalPhotoUrls !== null) {
+    await supabase
+      .from('audit_photos')
+      .delete()
+      .eq('audit_id', id)
+      .eq('photo_type', 'general');
+
+    if (generalPhotoUrls.length > 0) {
+      const { error: photoErr } = await supabase.from('audit_photos').insert(
+        generalPhotoUrls.map((url) => ({
+          audit_id: id,
+          photo_url: url,
+          photo_type: 'general' as const,
+        }))
+      );
+      if (photoErr) {
+        console.error('[Audit] Genel görünüm fotoğrafı kaydedilemedi:', photoErr.message);
+      }
+    }
   }
 
   // 4. Eğer denetim tamamlandıysa ('completed' veya 'approved'):
@@ -359,11 +426,94 @@ export async function PATCH(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
+  // 6. Denetim ilk kez tamamlandığında/onaylandığında sonuç bildirimi:
+  //    Excel kuralı — "Mail gönderimi: Yönetici, Denetim sonucu, Toplam puan"
+  let notifiedCount = 0;
+  const becameFinal =
+    (status === 'completed' || status === 'approved') &&
+    currentAudit.status !== 'completed' &&
+    currentAudit.status !== 'approved';
+
+  if (becameFinal) {
+    try {
+      const facilityName =
+        (currentAudit as any).facility?.name ||
+        (updatedAudit as any).facility?.name ||
+        'Tesis';
+      const auditTitle =
+        updatedAudit?.title ||
+        currentAudit.title ||
+        currentAudit.audit_type?.name ||
+        'Denetim';
+      const bandLabel =
+        percentage >= 80
+          ? 'UYGUN'
+          : percentage >= 60
+          ? 'TAKİP GEREKİYOR'
+          : 'KRİTİK UYGUNSUZLUK';
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.com';
+      const auditUrl = `${baseUrl}/dashboard/audits/${id}`;
+
+      // Tesis yöneticileri + şirket yöneticileri (aktif kullanıcılar)
+      const { data: recipients } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role')
+        .eq('company_id', currentAudit.company_id)
+        .eq('is_active', true)
+        .in('role', ['company_admin', 'facility_manager', 'facility_officer'])
+        .or(
+          `facility_id.eq.${currentAudit.facility_id},facility_id.is.null,role.eq.company_admin`
+        );
+
+      if (recipients && recipients.length > 0) {
+        for (const recipient of recipients) {
+          try {
+            if (recipient.email) {
+              await sendAuditCompletedEmail({
+                to: recipient.email,
+                recipientName: recipient.full_name,
+                auditTitle,
+                facilityName,
+                module: currentAudit.audit_type?.module || 'denetim',
+                score: finalScore,
+                percentage,
+                actionCount: createdActionsCount,
+                auditUrl,
+              });
+            }
+
+            await supabase.from('notifications').insert({
+              company_id: currentAudit.company_id,
+              user_id: recipient.id,
+              title: `[Denetim Sonucu] ${auditTitle}`,
+              message: `${facilityName} — denetim tamamlandı. Puan: %${percentage} (${bandLabel})${
+                createdActionsCount > 0
+                  ? ` • ${createdActionsCount} yeni aksiyon açıldı`
+                  : ''
+              }`,
+              type: 'bildirim',
+              related_type: 'audit',
+              related_id: id,
+            });
+
+            notifiedCount++;
+          } catch (recipientErr) {
+            console.error('[Audit] Alıcı bildirim hatası:', recipientErr);
+          }
+        }
+      }
+    } catch (notifyErr) {
+      // Bildirim hatası denetim kaydını etkilemez
+      console.error('[Audit] Sonuç bildirimi genel hatası:', notifyErr);
+    }
+  }
+
   return NextResponse.json({
     data: updatedAudit,
     score: finalScore,
     percentage,
     createdActionsCount,
+    notifiedCount,
   });
 }
 
