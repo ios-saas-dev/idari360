@@ -11,12 +11,10 @@ import {
   AlertCircle,
   HelpCircle,
   FileText,
-  Image as ImageIcon,
-  Plus,
-  Trash2,
   Paperclip,
   Building2,
 } from 'lucide-react';
+import RequestMediaUploader from '@/components/request-media-uploader';
 
 const CATEGORIES = [
   { value: 'yemekhane', label: 'Yemekhane' },
@@ -44,7 +42,6 @@ export default function NewRequestPage() {
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('yemekhane');
   const [priority, setPriority] = useState('orta');
-  const [photoUrlInput, setPhotoUrlInput] = useState('');
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
   const [facilityId, setFacilityId] = useState('');
   const [facilities, setFacilities] = useState<{ id: string; name: string; city?: string }[]>([]);
@@ -113,16 +110,6 @@ export default function NewRequestPage() {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const handleAddPhoto = () => {
-    if (!photoUrlInput.trim()) return;
-    setAttachmentUrls((prev) => [...prev, photoUrlInput.trim()]);
-    setPhotoUrlInput('');
-  };
-
-  const handleRemovePhoto = (index: number) => {
-    setAttachmentUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -322,58 +309,16 @@ export default function NewRequestPage() {
             <div>
               <h2 className="text-base font-semibold text-slate-900">Görsel / Belge Ekleme</h2>
               <p className="text-xs text-slate-500">
-                Problemi veya arızayı gösteren fotoğraf ya da belge linki ekleyebilirsiniz (İsteğe bağlı).
+                Problemi gösteren fotoğrafı telefon kameranızla çekin, galeriden seçin veya PDF belge ekleyin (İsteğe bağlı).
               </p>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <input
-                type="url"
-                placeholder="Görsel veya belge linki (https://...)"
-                value={photoUrlInput}
-                onChange={(e) => setPhotoUrlInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddPhoto();
-                  }
-                }}
-                className="flex-1 px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              />
-              <button
-                type="button"
-                onClick={handleAddPhoto}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium transition-colors flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                Ekle
-              </button>
-            </div>
-
-            {attachmentUrls.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                {attachmentUrls.map((url, idx) => (
-                  <div key={idx} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-video bg-slate-50">
-                    <img src={url} alt={`Ek ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePhoto(idx)}
-                      className="absolute top-1.5 right-1.5 p-1 bg-rose-600/90 text-white rounded-lg opacity-90 hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-400 flex items-center gap-2 pt-1">
-                <ImageIcon className="w-4 h-4 text-slate-300" />
-                Henüz görsel eklenmedi.
-              </div>
-            )}
-          </div>
+          <RequestMediaUploader
+            urls={attachmentUrls}
+            onChange={setAttachmentUrls}
+            cameraTitle="Talep Fotoğrafı Çek"
+          />
         </div>
 
 

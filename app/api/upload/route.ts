@@ -1,11 +1,14 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-// ─── Kanıt Fotoğrafı Yükleme API'si ────────────────────────────────────────
+// ─── Medya Yükleme API'si ──────────────────────────────────────────────────
 // Yalnızca oturum açmış kullanıcılar, yalnızca kendi şirketlerine ait
-// denetim/aksiyon kayıtları için, yalnızca GÖRSEL dosya yükleyebilir.
+// kayıtlar için dosya yükleyebilir.
+//   Denetim / aksiyon kanıtı : yalnızca GÖRSEL (JPG, PNG, WEBP, GIF, HEIC/HEIF)
+//   Talep ekleri             : GÖRSEL + PDF belge
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_SIZE = 10 * 1024 * 1024; // Görsel: 10 MB
+const MAX_PDF_SIZE = 4 * 1024 * 1024; // PDF: 4 MB (istek gövdesi sınırına güvenli mesafe)
 const BUCKET = 'evidence-photos';
 
 const ALLOWED_TYPES = [
@@ -24,6 +27,7 @@ const EXT_BY_TYPE: Record<string, string> = {
   'image/gif': 'gif',
   'image/heic': 'heic',
   'image/heif': 'heif',
+  'application/pdf': 'pdf',
 };
 
 const EXT_TO_TYPE: Record<string, string> = {
@@ -34,6 +38,7 @@ const EXT_TO_TYPE: Record<string, string> = {
   gif: 'image/gif',
   heic: 'image/heic',
   heif: 'image/heif',
+  pdf: 'application/pdf',
 };
 
 // Dosya imzası (magic bytes) ile gerçek görsel türünü tespit eder.
@@ -72,6 +77,14 @@ function detectImageType(bytes: Uint8Array): string | null {
   return null;
 }
 
+// PDF imzası: dosya "%PDF" ile başlamalı
+function isPdfSignature(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46
+  );
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -98,28 +111,53 @@ export async function POST(request: NextRequest) {
   const auditId = formData.get('audit_id') ? String(formData.get('audit_id')) : null;
   const questionId = formData.get('question_id') ? String(formData.get('question_id')) : null;
   const actionId = formData.get('action_id') ? String(formData.get('action_id')) : null;
+  const requestId = formData.get('request_id') ? String(formData.get('request_id')) : null;
+
+  // PDF yalnızca talep eklerinde serbest
+  const pdfAllowed = context === 'request';
 
   if (!(file instanceof File) || file.size <= 0) {
     return NextResponse.json({ error: 'Yüklenecek dosya bulunamadı.' }, { status: 400 });
   }
-  if (file.size > MAX_SIZE) {
-    return NextResponse.json({ error: 'Görsel boyutu en fazla 10 MB olabilir.' }, { status: 400 });
-  }
 
-  // MIME doğrulaması — bazı tarayıcılar HEIC için boş/octet-stream gönderebilir;
-  // bu durumda dosya uzantısından tür türetilir.
+  // MIME doğrulaması — bazı tarayıcılar HEIC/PDF için boş/octet-stream
+  // gönderebilir; bu durumda dosya uzantısından tür türetilir.
   const rawExt = (file.name.split('.').pop() || '').toLowerCase();
   let mimeType = (file.type || '').toLowerCase();
   if (!mimeType || mimeType === 'application/octet-stream') {
     mimeType = EXT_TO_TYPE[rawExt] || '';
   }
-  if (!ALLOWED_TYPES.includes(mimeType)) {
-    return NextResponse.json(
-      { error: 'Yalnızca görsel dosyaları yükleyebilirsiniz (JPG, PNG, WEBP, GIF, HEIC).' },
-      { status: 400 }
-    );
+  const declaredPdf = mimeType === 'application/pdf';
+
+  // Boyut + tür kontrolü
+  if (declaredPdf) {
+    if (!pdfAllowed) {
+      return NextResponse.json(
+        { error: 'PDF belgeler yalnızca talep eklerinde yüklenebilir.' },
+        { status: 400 }
+      );
+    }
+    if (file.size > MAX_PDF_SIZE) {
+      return NextResponse.json(
+        { error: 'PDF belge boyutu en fazla 4 MB olabilir.' },
+        { status: 400 }
+      );
+    }
+  } else {
+    if (!ALLOWED_TYPES.includes(mimeType)) {
+      return NextResponse.json(
+        {
+          error: pdfAllowed
+            ? 'Yalnızca görsel dosyaları (JPG, PNG, WEBP, GIF, HEIC) veya PDF belge yükleyebilirsiniz.'
+            : 'Yalnızca görsel dosyaları yükleyebilirsiniz (JPG, PNG, WEBP, GIF, HEIC).',
+        },
+        { status: 400 }
+      );
+    }
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json({ error: 'Görsel boyutu en fazla 10 MB olabilir.' }, { status: 400 });
+    }
   }
-  const ext = EXT_BY_TYPE[mimeType];
 
   // Bağlam doğrulaması: kayıt kullanıcının şirketine ait olmalı
   let folder = '';
@@ -150,26 +188,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Aksiyon bulunamadı veya yetkiniz yok.' }, { status: 404 });
     }
     folder = `actions/${profile.company_id}/${action.id}`;
+  } else if (context === 'request') {
+    if (requestId) {
+      const { data: reqRow } = await supabase
+        .from('requests')
+        .select('id, company_id')
+        .eq('id', requestId)
+        .single();
+      if (!reqRow || reqRow.company_id !== profile.company_id) {
+        return NextResponse.json({ error: 'Talep bulunamadı veya yetkiniz yok.' }, { status: 404 });
+      }
+      folder = `requests/${profile.company_id}/${reqRow.id}`;
+    } else {
+      // Talep henüz oluşturulmadı (yeni talep formu) — taslak klasörü
+      folder = `requests/${profile.company_id}/draft`;
+    }
   } else {
     return NextResponse.json({ error: 'Geçersiz yükleme bağlamı.' }, { status: 400 });
   }
 
-  // 3. Dosya içeriği doğrulaması: beyan edilen MIME türüne güvenmek yerine
-  //    dosyanın gerçek imzası (magic bytes) kontrol edilir ve tür buradan alınır.
+  // Dosya içeriği doğrulaması: beyan edilen MIME türüne güvenmek yerine
+  // dosyanın gerçek imzası (magic bytes) kontrol edilir ve tür buradan alınır.
   const arrayBuffer = await file.arrayBuffer();
-  const detectedType = detectImageType(new Uint8Array(arrayBuffer));
-  if (!detectedType) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const detectedImage = detectImageType(bytes);
+  const detectedPdf = pdfAllowed && isPdfSignature(bytes);
+  if (!detectedImage && !detectedPdf) {
     return NextResponse.json(
       {
-        error:
-          'Dosya geçerli bir görsel değil. Yalnızca JPG, PNG, WEBP, GIF veya HEIC yükleyebilirsiniz.',
+        error: pdfAllowed
+          ? 'Dosya geçerli bir görsel veya PDF değil. Yalnızca JPG, PNG, WEBP, GIF, HEIC veya PDF yükleyebilirsiniz.'
+          : 'Dosya geçerli bir görsel değil. Yalnızca JPG, PNG, WEBP, GIF veya HEIC yükleyebilirsiniz.',
       },
       { status: 400 }
     );
   }
 
-  const finalMime = ALLOWED_TYPES.includes(detectedType) ? detectedType : mimeType;
-  const finalExt = EXT_BY_TYPE[finalMime] || ext;
+  let finalMime: string;
+  let finalExt: string;
+  if (!detectedImage && detectedPdf) {
+    finalMime = 'application/pdf';
+    finalExt = 'pdf';
+  } else {
+    finalMime = ALLOWED_TYPES.includes(detectedImage as string) ? (detectedImage as string) : mimeType;
+    finalExt = EXT_BY_TYPE[finalMime] || rawExt || 'jpg';
+  }
 
   const objectPath = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${finalExt}`;
 
@@ -179,7 +242,7 @@ export async function POST(request: NextRequest) {
 
   if (uploadError) {
     return NextResponse.json(
-      { error: `Görsel yüklenemedi: ${uploadError.message}` },
+      { error: `Dosya yüklenemedi: ${uploadError.message}` },
       { status: 500 }
     );
   }

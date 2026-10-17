@@ -2,6 +2,14 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendRequestNotificationEmail } from '@/lib/email';
 
+// Ek URL listelerini temizle: yalnızca http(s) bağlantıları, en fazla 20 adet
+function cleanUrlList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u))
+    .slice(0, 20);
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -172,7 +180,7 @@ export async function POST(request: NextRequest) {
       priority: priority || 'orta',
       status: 'yeni',
       assigned_to: null,
-      attachment_urls: attachment_urls || [],
+      attachment_urls: cleanUrlList(attachment_urls),
       created_by: user.id,
     })
     .select(`
@@ -189,7 +197,7 @@ export async function POST(request: NextRequest) {
     new_status: 'yeni',
     changed_by: user.id,
     note: 'Talep oluşturuldu (T1: Açılış)',
-    attachment_urls: attachment_urls || [],
+    attachment_urls: cleanUrlList(attachment_urls),
   });
 
   // Tesis Yetkililerini Bul ve Bilgilendir (Tesis Müdürü, Tesis Sorumlusu, Şirket Yöneticisi)

@@ -2,6 +2,14 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendRequestNotificationEmail } from '@/lib/email';
 
+// Ek URL listelerini temizle: yalnızca http(s) bağlantıları, en fazla 20 adet
+function cleanUrlList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((u): u is string => typeof u === 'string' && /^https?:\/\//i.test(u))
+    .slice(0, 20);
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -149,8 +157,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     updates.closed_at = nowIso;
     updates.resolution_note = note.trim();
     if (resolution_photos && Array.isArray(resolution_photos)) {
-      updates.resolution_photos = resolution_photos;
-      historyPhotos = resolution_photos;
+      const cleanPhotos = cleanUrlList(resolution_photos);
+      updates.resolution_photos = cleanPhotos;
+      historyPhotos = cleanPhotos;
     }
     historyNote = note.trim();
 

@@ -19,12 +19,12 @@ import {
   Image as ImageIcon,
   Paperclip,
   ExternalLink,
-  Plus,
-  Trash2,
+  FileText,
   ShieldAlert,
   Award,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import RequestMediaUploader, { isPdfUrl } from '@/components/request-media-uploader';
 
 interface RequestDetail {
   id: string;
@@ -191,7 +191,6 @@ export default function RequestDetailPage({
   const [modalOpen, setModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'cozumlendi' | 'reddedildi'>('cozumlendi');
   const [resolutionNote, setResolutionNote] = useState('');
-  const [resolutionPhotoUrl, setResolutionPhotoUrl] = useState('');
   const [resolutionPhotos, setResolutionPhotos] = useState<string[]>([]);
   const [modalSubmitting, setModalSubmitting] = useState(false);
 
@@ -293,22 +292,7 @@ export default function RequestDetailPage({
     setModalAction(action);
     setResolutionNote('');
     setResolutionPhotos([]);
-    setResolutionPhotoUrl('');
     setModalOpen(true);
-  };
-
-  // Fotoğraf listesine ekleme
-  const handleAddPhoto = () => {
-    if (!resolutionPhotoUrl.trim()) return;
-    if (!resolutionPhotos.includes(resolutionPhotoUrl.trim())) {
-      setResolutionPhotos([...resolutionPhotos, resolutionPhotoUrl.trim()]);
-    }
-    setResolutionPhotoUrl('');
-  };
-
-  // Fotoğraf silme
-  const handleRemovePhoto = (index: number) => {
-    setResolutionPhotos(resolutionPhotos.filter((_, i) => i !== index));
   };
 
   // Adım 3: Sonuçlandırma Submit (Çözüldü Olarak Kapat veya Reddet)
@@ -552,17 +536,27 @@ export default function RequestDetailPage({
                           href={photo}
                           target="_blank"
                           rel="noreferrer"
+                          title={isPdfUrl(photo) ? 'PDF belgeyi aç' : 'Görseli aç'}
                           className="group relative w-20 h-20 rounded-xl overflow-hidden border border-black/10 bg-white hover:shadow-md transition-all flex items-center justify-center"
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={photo}
-                            alt={`Çözüm kanıtı ${idx + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
-                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                            <ExternalLink className="w-4 h-4" />
-                          </span>
+                          {isPdfUrl(photo) ? (
+                            <span className="flex flex-col items-center gap-1 text-slate-500 group-hover:text-red-600 transition-colors">
+                              <FileText className="w-7 h-7" />
+                              <span className="text-[9px] font-bold uppercase tracking-wide">PDF</span>
+                            </span>
+                          ) : (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={photo}
+                                alt={`Çözüm kanıtı ${idx + 1}`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                              <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                <ExternalLink className="w-4 h-4" />
+                              </span>
+                            </>
+                          )}
                         </a>
                       ))}
                     </div>
@@ -586,7 +580,7 @@ export default function RequestDetailPage({
               <div>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
                   <Paperclip className="w-3.5 h-3.5" />
-                  Talep Açılış Fotoğrafları ({requestData.attachment_urls.length})
+                  Talep Ekleri / Fotoğrafları ({requestData.attachment_urls.length})
                 </h2>
                 <div className="flex flex-wrap gap-2.5">
                   {requestData.attachment_urls.map((url, idx) => (
@@ -595,17 +589,27 @@ export default function RequestDetailPage({
                       href={url}
                       target="_blank"
                       rel="noreferrer"
+                      title={isPdfUrl(url) ? 'PDF belgeyi aç' : 'Görseli aç'}
                       className="group relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 hover:shadow-md transition-all flex items-center justify-center"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={url}
-                        alt={`Talep eki ${idx + 1}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                        <ExternalLink className="w-4 h-4" />
-                      </span>
+                      {isPdfUrl(url) ? (
+                        <span className="flex flex-col items-center gap-1 text-slate-500 group-hover:text-red-600 transition-colors">
+                          <FileText className="w-7 h-7" />
+                          <span className="text-[9px] font-bold uppercase tracking-wide">PDF</span>
+                        </span>
+                      ) : (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={`Talep eki ${idx + 1}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                            <ExternalLink className="w-4 h-4" />
+                          </span>
+                        </>
+                      )}
                     </a>
                   ))}
                 </div>
@@ -1082,54 +1086,21 @@ export default function RequestDetailPage({
                 </div>
               </div>
 
-              {/* OPSİYONEL ALAN: Görsel Ekleme */}
+              {/* OPSİYONEL ALAN: Fotoğraf / Belge Ekleme */}
               <div className="space-y-2 pt-1 border-t border-slate-100">
                 <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Görsel Ekleme <span className="text-slate-400 font-normal">(Opsiyonel Alan)</span>
+                  Fotoğraf / Belge Ekleme <span className="text-slate-400 font-normal">(Opsiyonel Alan)</span>
                 </label>
                 <p className="text-[11px] text-slate-500">
-                  Yapılan onarımın fotoğrafı, tedarikçinin fişi veya tutanak belgesi URL adresi eklenebilir.
+                  Yapılan onarımın fotoğrafını çekebilir; tedarikçi fişi veya tutanak gibi PDF belgeleri ekleyebilirsiniz.
                 </p>
 
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={resolutionPhotoUrl}
-                    onChange={(e) => setResolutionPhotoUrl(e.target.value)}
-                    placeholder="https://... fotoğraf veya belge linki"
-                    className="flex-1 text-xs rounded-xl border border-slate-200 px-3 py-2 focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddPhoto}
-                    disabled={!resolutionPhotoUrl.trim()}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl disabled:opacity-40"
-                  >
-                    Ekle
-                  </button>
-                </div>
-
-                {/* Eklenen Görseller Önizleme */}
-                {resolutionPhotos.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {resolutionPhotos.map((url, i) => (
-                      <div
-                        key={i}
-                        className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-50"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={url} alt={`Ek ${i + 1}`} className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhoto(i)}
-                          className="absolute top-0.5 right-0.5 bg-rose-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <RequestMediaUploader
+                  requestId={id}
+                  urls={resolutionPhotos}
+                  onChange={setResolutionPhotos}
+                  cameraTitle="Çözüm Fotoğrafı Çek"
+                />
               </div>
 
               {/* Modal Aksiyon Butonları */}
