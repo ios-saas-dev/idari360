@@ -28,7 +28,7 @@ interface ActionItem {
   description?: string;
   category: string;
   priority: 'dusuk' | 'orta' | 'yuksek' | 'kritik';
-  status: 'acik' | 'devam_ediyor' | 'kapali' | 'gecikti';
+  status: 'acik' | 'devam_ediyor' | 'kapali' | 'gecikti' | 'onay_bekliyor';
   due_date?: string | null;
   facility_id?: string | null;
   created_at: string;
@@ -268,6 +268,12 @@ export default function ActionsPage() {
             Tamamlandı
           </span>
         );
+      case 'onay_bekliyor':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+            Onay Bekliyor
+          </span>
+        );
       case 'gecikti':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
@@ -404,6 +410,7 @@ export default function ActionsPage() {
               { id: 'all', label: 'Tümü' },
               { id: 'acik', label: 'Açık' },
               { id: 'devam_ediyor', label: 'Devam Ediyor' },
+              { id: 'onay_bekliyor', label: 'Onay Bekliyor' },
               { id: 'kapali', label: 'Tamamlandı' },
               { id: 'gecikti', label: 'Gecikti' },
             ].map((tab) => (

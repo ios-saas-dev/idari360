@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ShieldCheck,
   Bus,
+  CalendarClock,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -71,6 +72,7 @@ interface AuditDetail {
   title: string;
   module?: string;
   audit_date: string;
+  planned_date?: string | null;
   completed_at?: string | null;
   status: 'draft' | 'in_progress' | 'completed' | 'approved' | string;
   total_score: number;
@@ -129,6 +131,10 @@ export default function AuditRunnerPage({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   // Genel görünüm fotoğrafları (Excel: "En az 1 fotoğraf zorunlu") — audit_photos (photo_type='general')
   const [generalPhotos, setGeneralPhotos] = useState<string[]>([]);
+  // Planlanan tarih düzenleme (planlı denetim)
+  const [isEditingPlanned, setIsEditingPlanned] = useState(false);
+  const [plannedDraft, setPlannedDraft] = useState('');
+  const [plannedSaving, setPlannedSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<{
     text: string;
     type: 'success' | 'error';
@@ -457,6 +463,33 @@ export default function AuditRunnerPage({
     }
   };
 
+  // Planlanan tarih güncelleme (planlı denetim)
+  const handleSavePlannedDate = async () => {
+    setPlannedSaving(true);
+    try {
+      const res = await fetch(`/api/audits/${auditId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planned_date: plannedDraft || null }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Planlanan tarih güncellenemedi.');
+      }
+      const json = await res.json();
+      setAudit((prev) => (prev ? { ...prev, planned_date: json.data?.planned_date ?? null } : prev));
+      setToastMessage({
+        text: plannedDraft ? 'Planlanan denetim tarihi güncellendi.' : 'Planlanan tarih kaldırıldı.',
+        type: 'success',
+      });
+      setIsEditingPlanned(false);
+    } catch (err: any) {
+      setToastMessage({ text: err.message || 'Planlanan tarih güncellenemedi.', type: 'error' });
+    } finally {
+      setPlannedSaving(false);
+    }
+  };
+
   // Approve Audit (for Admin/Manager)
   const handleApproveAudit = async () => {
     try {
@@ -483,6 +516,30 @@ export default function AuditRunnerPage({
 
   const isCompleted =
     audit?.status === 'completed' || audit?.status === 'approved';
+
+  // Planlı denetim göstergeleri
+  const canPlanAudit = ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(userRole);
+  const plannedDateObj = audit?.planned_date ? new Date(`${audit.planned_date}T00:00:00`) : null;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const plannedOverdue = !!plannedDateObj && plannedDateObj < todayStart && !isCompleted;
+  const plannedDaysLeft = plannedDateObj
+    ? Math.round((plannedDateObj.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const plannedInfoLabel =
+    plannedDaysLeft === null
+      ? null
+      : plannedDaysLeft < 0
+      ? `${Math.abs(plannedDaysLeft)} gündür gecikmede`
+      : plannedDaysLeft === 0
+      ? 'Bugün'
+      : `${plannedDaysLeft} gün kaldı`;
+  const formatPlannedDate = (dateStr: string) =>
+    new Date(`${dateStr}T00:00:00`).toLocaleDateString('tr-TR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
 
   if (loading) {
     return (
@@ -630,6 +687,93 @@ export default function AuditRunnerPage({
 
       {/* Audit Meta & Live Score Banner */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+        {/* Planlı Denetim Şeridi */}
+        {(audit.planned_date || (canPlanAudit && !isCompleted)) && (
+          <div
+            className={`mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border px-4 py-3 ${
+              plannedOverdue ? 'border-rose-200/80 bg-rose-50/60' : 'border-violet-200/80 bg-violet-50/60'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`p-2.5 bg-white rounded-xl border shadow-xs ${
+                  plannedOverdue ? 'text-rose-600 border-rose-200/70' : 'text-violet-600 border-violet-200/70'
+                }`}
+              >
+                <CalendarClock className="w-5 h-5" />
+              </div>
+              <div>
+                <div
+                  className={`text-xs font-semibold uppercase tracking-wider ${
+                    plannedOverdue ? 'text-rose-600' : 'text-violet-600'
+                  }`}
+                >
+                  Planlı Denetim
+                </div>
+                {isEditingPlanned ? (
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <input
+                      type="date"
+                      value={plannedDraft}
+                      onChange={(e) => setPlannedDraft(e.target.value)}
+                      className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                    <button
+                      onClick={handleSavePlannedDate}
+                      disabled={plannedSaving}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {plannedSaving ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Save className="w-3 h-3" />
+                      )}
+                      Kaydet
+                    </button>
+                    <button
+                      onClick={() => setIsEditingPlanned(false)}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+                    >
+                      İptal
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-sm font-bold text-slate-800 flex flex-wrap items-center gap-2 mt-0.5">
+                    {audit.planned_date ? (
+                      <>
+                        <span>{formatPlannedDate(audit.planned_date)}</span>
+                        {plannedInfoLabel && (
+                          <span
+                            className={`text-xs font-semibold ${
+                              plannedOverdue ? 'text-rose-600' : 'text-violet-600'
+                            }`}
+                          >
+                            {plannedOverdue ? `⚠️ ${plannedInfoLabel}` : `• ${plannedInfoLabel}`}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-slate-500 font-medium">Planlanan tarih belirlenmedi</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            {!isEditingPlanned && canPlanAudit && !isCompleted && (
+              <button
+                onClick={() => {
+                  setPlannedDraft(audit.planned_date || '');
+                  setIsEditingPlanned(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors self-start sm:self-center"
+              >
+                <CalendarClock className="w-3.5 h-3.5" />
+                {audit.planned_date ? 'Tarihi Değiştir' : 'Planla'}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Denetlenen Servis Aracı Şeridi (araç bazlı denetim) */}
         {audit.service_vehicle && (
           <div className="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-4 py-3">

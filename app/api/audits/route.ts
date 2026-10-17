@@ -40,8 +40,37 @@ export async function POST(request: NextRequest) {
   if (!['super_admin','company_admin','facility_manager','facility_officer'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
 
   const body = await request.json();
-  const { title, audit_type_id, audit_date, notes, facility_id, service_vehicle_id } = body;
+  const { title, audit_type_id, audit_date, notes, facility_id, service_vehicle_id, planned_date, auditor_id } = body;
   if (!audit_type_id || !audit_date) return NextResponse.json({ error: 'Eksik alanlar' }, { status: 400 });
+
+  // Planlanan tarih (opsiyonel): doluysa denetim "planlı" sayılır ve
+  // 7/3/1 gün kala + gecikmede otomatik hatırlatma üretilir.
+  let resolvedPlannedDate: string | null = null;
+  if (planned_date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(planned_date))) {
+      return NextResponse.json({ error: 'Planlanan tarih geçersiz (YYYY-AA-GG olmalı).' }, { status: 400 });
+    }
+    resolvedPlannedDate = String(planned_date);
+  }
+
+  // Denetçi ataması (opsiyonel): varsayılan, denetimi oluşturan kişidir.
+  let resolvedAuditorId = user.id;
+  if (auditor_id && auditor_id !== user.id) {
+    const { data: auditorProfile } = await supabase
+      .from('profiles')
+      .select('id, role, company_id, is_active')
+      .eq('id', auditor_id)
+      .single();
+    if (
+      !auditorProfile ||
+      auditorProfile.company_id !== profile!.company_id ||
+      auditorProfile.is_active === false ||
+      !['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(auditorProfile.role)
+    ) {
+      return NextResponse.json({ error: 'Seçilen denetçi bulunamadı veya yetkiniz yok.' }, { status: 400 });
+    }
+    resolvedAuditorId = auditorProfile.id;
+  }
 
   const { data: auditType } = await supabase.from('audit_types').select('name, module, max_score').eq('id', audit_type_id).single();
 
@@ -88,9 +117,10 @@ export async function POST(request: NextRequest) {
     company_id: profile!.company_id,
     facility_id: resolvedFacilityId,
     audit_type_id,
-    auditor_id: user.id,
+    auditor_id: resolvedAuditorId,
     title: auditTitle,
     audit_date,
+    planned_date: resolvedPlannedDate,
     total_score: 0,
     max_possible_score: auditType?.max_score || 100,
     percentage: 0,

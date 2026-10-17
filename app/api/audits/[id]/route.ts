@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendAuditCompletedEmail } from '@/lib/email';
 
@@ -99,7 +99,19 @@ export async function PATCH(
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
 
   const body = await request.json();
-  const { title, notes, status, answers = [], general_photos: generalPhotosInput } = body;
+  const { title, notes, status, answers = [], general_photos: generalPhotosInput, planned_date } = body;
+
+  // Planlanan tarih güncellemesi (opsiyonel alan; gönderildiyse işlenir)
+  let plannedDateUpdate: string | null | undefined = undefined;
+  if (planned_date !== undefined) {
+    if (planned_date === null || planned_date === '') {
+      plannedDateUpdate = null;
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(planned_date))) {
+      plannedDateUpdate = String(planned_date);
+    } else {
+      return NextResponse.json({ error: 'Planlanan tarih geçersiz (YYYY-AA-GG olmalı).' }, { status: 400 });
+    }
+  }
 
   // Genel görünüm fotoğrafları (opsiyonel gövde alanı; gönderildiyse senkronize edilir)
   const generalPhotoUrls: string[] | null = Array.isArray(generalPhotosInput)
@@ -402,6 +414,7 @@ export async function PATCH(
 
   if (title) auditUpdates.title = title;
   if (notes !== undefined) auditUpdates.notes = notes;
+  if (plannedDateUpdate !== undefined) auditUpdates.planned_date = plannedDateUpdate;
   if (status) {
     auditUpdates.status = status;
     if (status === 'completed' || status === 'approved') {
@@ -454,8 +467,12 @@ export async function PATCH(
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://idari360.com';
       const auditUrl = `${baseUrl}/dashboard/audits/${id}`;
 
+      // Alıcılar admin istemcisiyle bulunur: denetimi tamamlayan kullanıcının RLS
+      // görünürlüğü (ör. saha sorumlusu başka profilleri göremez) sonucu etkilememeli.
+      const admin = createAdminClient();
+
       // Tesis yöneticileri + şirket yöneticileri (aktif kullanıcılar)
-      const { data: recipients } = await supabase
+      const { data: recipients } = await admin
         .from('profiles')
         .select('id, email, full_name, role')
         .eq('company_id', currentAudit.company_id)
@@ -482,7 +499,7 @@ export async function PATCH(
               });
             }
 
-            await supabase.from('notifications').insert({
+            const { error: notifErr } = await admin.from('notifications').insert({
               company_id: currentAudit.company_id,
               user_id: recipient.id,
               title: `[Denetim Sonucu] ${auditTitle}`,
@@ -495,6 +512,9 @@ export async function PATCH(
               related_type: 'audit',
               related_id: id,
             });
+            if (notifErr) {
+              console.error('[Audit] Bildirim eklenemedi:', notifErr.message, '| alıcı:', recipient.id);
+            }
 
             notifiedCount++;
           } catch (recipientErr) {

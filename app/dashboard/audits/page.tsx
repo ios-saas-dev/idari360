@@ -45,6 +45,7 @@ interface AuditItem {
     model?: string | null;
   } | null;
   audit_date?: string;
+  planned_date?: string | null;
   score?: number | null;
   total_score?: number | null;
   percentage?: number | null;
@@ -95,8 +96,14 @@ export default function AuditsPage() {
     facility_id: '',
     service_vehicle_id: '',
     audit_date: new Date().toISOString().split('T')[0],
+    planned_date: '',
+    auditor_id: '',
     notes: '',
   });
+
+  const [auditorOptions, setAuditorOptions] = useState<
+    Array<{ id: string; full_name: string; email?: string | null }>
+  >([]);
 
   const supabase = createBrowserClient();
 
@@ -112,6 +119,17 @@ export default function AuditsPage() {
             .single();
           if (profile) {
             setUserRole(profile.role);
+            // Denetçi ataması için denetim yapabilecek kullanıcılar
+            if (profile.company_id) {
+              const { data: auditors } = await supabase
+                .from('profiles')
+                .select('id, full_name, email, role')
+                .eq('company_id', profile.company_id)
+                .eq('is_active', true)
+                .in('role', ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'])
+                .order('full_name');
+              if (auditors) setAuditorOptions(auditors);
+            }
           }
         }
 
@@ -243,6 +261,8 @@ export default function AuditsPage() {
           facility_id: formData.facility_id || null,
           service_vehicle_id: formData.service_vehicle_id || null,
           audit_date: formData.audit_date,
+          planned_date: formData.planned_date || null,
+          auditor_id: formData.auditor_id || undefined,
           notes: formData.notes,
         }),
       });
@@ -735,6 +755,24 @@ export default function AuditsPage() {
                   );
                   const isFinal = item.status === 'completed' || item.status === 'approved';
 
+                  // Planlı denetim rozeti: tarih geçtiyse ve denetim final değilse "Plan Gecikti"
+                  let plannedChip: { label: string; cls: string } | null = null;
+                  if (item.planned_date && !isFinal) {
+                    const plannedObj = new Date(`${item.planned_date}T00:00:00`);
+                    const todayStart = new Date();
+                    todayStart.setHours(0, 0, 0, 0);
+                    plannedChip =
+                      plannedObj < todayStart
+                        ? {
+                            label: `Plan Gecikti: ${formatDate(item.planned_date)}`,
+                            cls: 'bg-rose-50 text-rose-700 border-rose-200',
+                          }
+                        : {
+                            label: `Planlandı: ${formatDate(item.planned_date)}`,
+                            cls: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+                          };
+                  }
+
                     return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-3.5 px-4 font-semibold text-slate-900">
@@ -783,6 +821,14 @@ export default function AuditsPage() {
                           <Calendar className="w-3.5 h-3.5 text-slate-400" />
                           <span>{formatDate(item.audit_date)}</span>
                         </div>
+                        {plannedChip && (
+                          <div
+                            className={`mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${plannedChip.cls}`}
+                          >
+                            <Clock className="w-3 h-3" />
+                            {plannedChip.label}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         {item.score !== null && item.score !== undefined ? (
@@ -1008,6 +1054,45 @@ export default function AuditsPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Planlanan Tarih (İsteğe Bağlı)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.planned_date}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setFormData({ ...formData, planned_date: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 bg-white"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Doldurursanız denetim &quot;planlı&quot; izlenir; 7/3/1 gün kala ve gecikmede otomatik
+                    hatırlatma gönderilir.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Denetçi
+                  </label>
+                  <select
+                    value={formData.auditor_id}
+                    onChange={(e) => setFormData({ ...formData, auditor_id: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 bg-white"
+                  >
+                    <option value="">Kendim (varsayılan)</option>
+                    {auditorOptions.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Denetimi yapacak kişi; hatırlatmalar bu kişiye gönderilir.
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                   Notlar / Açıklama (İsteğe Bağlı)
@@ -1035,7 +1120,7 @@ export default function AuditsPage() {
                   className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-medium text-sm rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 shadow-sm shadow-blue-500/20"
                 >
                   {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Denetimi Başlat
+                  {formData.planned_date ? 'Denetimi Planla' : 'Denetimi Başlat'}
                 </button>
               </div>
             </form>

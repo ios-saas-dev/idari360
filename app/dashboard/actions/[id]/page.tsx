@@ -42,10 +42,15 @@ interface ActionDetail {
   description?: string;
   category: string;
   priority: 'dusuk' | 'orta' | 'yuksek' | 'kritik';
-  status: 'acik' | 'devam_ediyor' | 'kapali' | 'gecikti';
+  status: 'acik' | 'devam_ediyor' | 'kapali' | 'gecikti' | 'onay_bekliyor';
   due_date?: string | null;
   closed_at?: string | null;
   evidence_note?: string | null;
+  submitted_at?: string | null;
+  submitted_by?: string | null;
+  approved_at?: string | null;
+  approved_by?: string | null;
+  rejection_note?: string | null;
   audit_id?: string | null;
   audit_answer_id?: string | null;
   audit_question_id?: string | null;
@@ -109,6 +114,19 @@ interface ProfileItem {
   email?: string;
 }
 
+// Durum geçişleri (onay akışı dahil): status = serbest geçiş, intent = akış butonu
+interface TransitionItem {
+  key: string;
+  kind: 'status' | 'intent';
+  target?: string;
+  intent?: 'submit' | 'approve' | 'reject';
+  label: string;
+  color: string;
+  icon: React.ReactNode;
+  noteRequired?: boolean;
+  notePlaceholder?: string;
+}
+
 // ─── Config & Helpers ──────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; border: string; dot: string; icon: React.ReactNode }> = {
@@ -143,6 +161,14 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; b
     border: 'border-rose-200',
     dot: 'bg-rose-500',
     icon: <AlertTriangle className="w-4 h-4" />,
+  },
+  onay_bekliyor: {
+    label: 'Onay Bekliyor',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
+    border: 'border-indigo-200',
+    dot: 'bg-indigo-500',
+    icon: <Clock className="w-4 h-4" />,
   },
 };
 
@@ -235,6 +261,10 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
   // Sections expand
   const [showTimeline, setShowTimeline] = useState(true);
 
+  // Current user (rol bazlı onay yetkisi)
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState('');
+
   // ─── Data Fetching ─────────────────────────────────────────
 
   const fetchAction = useCallback(async () => {
@@ -263,11 +293,13 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
     async function loadProfiles() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setCurrentUserId(user.id);
       const { data: currentProfile } = await supabase
         .from('profiles')
-        .select('company_id')
+        .select('company_id, role')
         .eq('id', user.id)
         .single();
+      if (currentProfile?.role) setCurrentUserRole(currentProfile.role);
       if (currentProfile?.company_id) {
         const { data } = await supabase
           .from('profiles')
@@ -283,20 +315,42 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
 
   // ─── Handlers ──────────────────────────────────────────────
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleTransition = async (t: TransitionItem) => {
     if (!action) return;
+    if (t.noteRequired && !statusNote.trim()) {
+      alert('Bu işlem için gerekçe yazmanız zorunludur.');
+      return;
+    }
     setStatusChanging(true);
     try {
+      let payload: Record<string, unknown>;
+      if (t.kind === 'intent') {
+        if (t.intent === 'submit') {
+          // Çözümü onaya gönder ("Firma tamamladı → onayınız bekleniyor")
+          payload = {
+            intent: 'submit',
+            note: statusNote.trim() || undefined,
+            evidence_note: evidenceNote.trim() || undefined,
+          };
+        } else if (t.intent === 'reject') {
+          payload = { intent: 'reject', rejection_note: statusNote.trim() };
+        } else {
+          payload = { intent: 'approve', note: statusNote.trim() || undefined };
+        }
+      } else {
+        payload = {
+          status: t.target,
+          note: statusNote.trim() || getStatusChangeDefaultNote(action.status, t.target || ''),
+        };
+      }
+
       const res = await fetch(`/api/actions/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: newStatus,
-          note: statusNote.trim() || getStatusChangeDefaultNote(action.status, newStatus),
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         throw new Error(json.error || 'Durum güncellenemedi');
       }
       setStatusNote('');
@@ -385,37 +439,78 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
-  // Valid status transitions
-  const getTransitions = (status: string): Array<{ target: string; label: string; color: string; icon: React.ReactNode }> => {
-    const transitions: Array<{ target: string; label: string; color: string; icon: React.ReactNode }> = [];
+  // Rol bazlı yetkiler (onay akışı)
+  const isManager = ['super_admin', 'company_admin', 'facility_manager'].includes(currentUserRole);
+  const canSubmit =
+    ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(currentUserRole) ||
+    (!!currentUserId && action?.responsible_user_id === currentUserId);
+
+  // Valid status transitions (onay akışı ile)
+  const getTransitions = (status: string): TransitionItem[] => {
+    const transitions: TransitionItem[] = [];
+
+    const submitTransition: TransitionItem = {
+      key: 'intent-submit',
+      kind: 'intent',
+      intent: 'submit',
+      label: 'Çözümü Tamamla ve Onaya Gönder',
+      color: 'bg-emerald-500 hover:bg-emerald-600',
+      icon: <CheckCircle2 className="w-4 h-4" />,
+      notePlaceholder: 'Ek not (isteğe bağlı)...',
+    };
+
     switch (status) {
       case 'acik':
         transitions.push(
-          { target: 'devam_ediyor', label: 'İşleme Al', color: 'bg-amber-500 hover:bg-amber-600', icon: <PlayCircle className="w-4 h-4" /> },
-          { target: 'kapali', label: 'Doğrudan Kapat', color: 'bg-emerald-500 hover:bg-emerald-600', icon: <CheckCircle2 className="w-4 h-4" /> }
+          { key: 'devam_ediyor', kind: 'status', target: 'devam_ediyor', label: 'İşleme Al', color: 'bg-amber-500 hover:bg-amber-600', icon: <PlayCircle className="w-4 h-4" /> }
         );
+        if (canSubmit) transitions.push(submitTransition);
         break;
       case 'devam_ediyor':
-        transitions.push(
-          { target: 'kapali', label: 'Çözüldü / Kapat', color: 'bg-emerald-500 hover:bg-emerald-600', icon: <CheckCircle2 className="w-4 h-4" /> }
-        );
-        break;
-      case 'kapali':
-        transitions.push(
-          { target: 'acik', label: 'Yeniden Aç', color: 'bg-blue-500 hover:bg-blue-600', icon: <RotateCcw className="w-4 h-4" /> }
-        );
+        if (canSubmit) transitions.push(submitTransition);
         break;
       case 'gecikti':
         transitions.push(
-          { target: 'devam_ediyor', label: 'İşleme Al', color: 'bg-amber-500 hover:bg-amber-600', icon: <PlayCircle className="w-4 h-4" /> },
-          { target: 'kapali', label: 'Çözüldü / Kapat', color: 'bg-emerald-500 hover:bg-emerald-600', icon: <CheckCircle2 className="w-4 h-4" /> }
+          { key: 'devam_ediyor', kind: 'status', target: 'devam_ediyor', label: 'İşleme Al', color: 'bg-amber-500 hover:bg-amber-600', icon: <PlayCircle className="w-4 h-4" /> }
+        );
+        if (canSubmit) transitions.push(submitTransition);
+        break;
+      case 'onay_bekliyor':
+        // Yalnızca yöneticiler onaylar/reddeder (facility_officer onaylayamaz)
+        if (isManager) {
+          transitions.push(
+            {
+              key: 'intent-approve',
+              kind: 'intent',
+              intent: 'approve',
+              label: 'Onayla ve Kapat',
+              color: 'bg-emerald-500 hover:bg-emerald-600',
+              icon: <CheckCircle2 className="w-4 h-4" />,
+              notePlaceholder: 'Onay notu (isteğe bağlı)...',
+            },
+            {
+              key: 'intent-reject',
+              kind: 'intent',
+              intent: 'reject',
+              label: 'Reddet',
+              color: 'bg-rose-500 hover:bg-rose-600',
+              icon: <XCircle className="w-4 h-4" />,
+              noteRequired: true,
+              notePlaceholder: 'Red gerekçesi (zorunlu)...',
+            }
+          );
+        }
+        break;
+      case 'kapali':
+        transitions.push(
+          { key: 'acik', kind: 'status', target: 'acik', label: 'Yeniden Aç', color: 'bg-blue-500 hover:bg-blue-600', icon: <RotateCcw className="w-4 h-4" /> }
         );
         break;
     }
-    // Always allow reopen from any non-acik state
-    if (status !== 'acik' && status !== 'kapali') {
+    // Açık / kapalı / onay bekleyen dışındaki durumlarda yeniden açılabilir
+    if (status !== 'acik' && status !== 'kapali' && status !== 'onay_bekliyor') {
       transitions.push(
-        { target: 'acik', label: 'Yeniden Aç', color: 'bg-blue-500 hover:bg-blue-600', icon: <RotateCcw className="w-4 h-4" /> }
+        { key: 'acik', kind: 'status', target: 'acik', label: 'Yeniden Aç', color: 'bg-blue-500 hover:bg-blue-600', icon: <RotateCcw className="w-4 h-4" /> }
       );
     }
     return transitions;
@@ -642,12 +737,25 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
                   placeholder="Yapılan düzeltici faaliyeti detaylı açıklayın..."
                   value={evidenceNote}
                   onChange={(e) => setEvidenceNote(e.target.value)}
-                  className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all resize-none"
+                  disabled={action.status === 'kapali' || action.status === 'onay_bekliyor'}
+                  className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all resize-none disabled:opacity-60"
                 />
+                {(action.status === 'kapali' || action.status === 'onay_bekliyor') && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {action.status === 'onay_bekliyor'
+                      ? 'Onay sürecinde çözüm açıklaması düzenlenemez.'
+                      : 'Kapatılan aksiyonda çözüm açıklaması düzenlenemez.'}
+                  </p>
+                )}
                 <div className="flex justify-end mt-2">
                   <button
                     onClick={handleSaveEvidence}
-                    disabled={evidenceSaving || evidenceNote === (action.evidence_note || '')}
+                    disabled={
+                      evidenceSaving ||
+                      evidenceNote === (action.evidence_note || '') ||
+                      action.status === 'kapali' ||
+                      action.status === 'onay_bekliyor'
+                    }
                     className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {evidenceSaving ? (
@@ -716,6 +824,7 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
                   context="action"
                   actionId={id}
                   onChange={handleAddPhoto}
+                  disabled={action.status === 'kapali' || action.status === 'onay_bekliyor'}
                   helperText="Düzeltici faaliyet sonrası fotoğrafı yükleyin — mobilde kamera veya albümden seçilebilir (JPG, PNG, WEBP • en fazla 10 MB)"
                 />
                 {photoSaving && (
@@ -855,19 +964,52 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
                 </span>
               </div>
 
+              {/* Onay akışı bilgi blokları */}
+              {action.status === 'onay_bekliyor' && (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-1">
+                  <p className="text-xs font-semibold text-indigo-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Çözüm tamamlandı olarak işaretlendi — yönetici onayı bekleniyor
+                  </p>
+                  {action.submitted_at && (
+                    <p className="text-[11px] text-indigo-600">Gönderim: {formatDate(action.submitted_at)}</p>
+                  )}
+                  {!isManager && (
+                    <p className="text-[11px] text-indigo-600">
+                      Yönetici onayladığında aksiyon otomatik olarak kapatılacaktır.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {action.rejection_note && action.status === 'devam_ediyor' && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 space-y-1">
+                  <p className="text-xs font-semibold text-rose-800 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Son gönderim reddedildi — düzeltilip yeniden gönderilmeli
+                  </p>
+                  <p className="text-[11px] text-rose-700">{action.rejection_note}</p>
+                </div>
+              )}
+
               {/* Transition buttons */}
               <div className="space-y-2">
                 {getTransitions(action.status).map((transition) => (
-                  <div key={transition.target}>
-                    {showStatusNote === transition.target ? (
+                  <div key={transition.key}>
+                    {showStatusNote === transition.key ? (
                       <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50">
                         <textarea
                           rows={2}
-                          placeholder="Not ekleyin (isteğe bağlı)..."
+                          placeholder={transition.notePlaceholder || 'Not ekleyin (isteğe bağlı)...'}
                           value={statusNote}
                           onChange={(e) => setStatusNote(e.target.value)}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                          className={`w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 resize-none ${
+                            transition.noteRequired ? 'focus:ring-rose-500' : 'focus:ring-blue-500'
+                          }`}
                         />
+                        {transition.noteRequired && !statusNote.trim() && (
+                          <p className="text-[11px] text-rose-500">Gerekçe yazmadan devam edilemez.</p>
+                        )}
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => {
@@ -879,9 +1021,9 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
                             İptal
                           </button>
                           <button
-                            onClick={() => handleStatusChange(transition.target)}
-                            disabled={statusChanging}
-                            className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white rounded-lg shadow-sm transition-all disabled:opacity-50 ${transition.color}`}
+                            onClick={() => handleTransition(transition)}
+                            disabled={statusChanging || (transition.noteRequired && !statusNote.trim())}
+                            className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${transition.color}`}
                           >
                             {statusChanging ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -894,7 +1036,7 @@ export default function ActionDetailPage({ params }: { params: Promise<{ id: str
                       </div>
                     ) : (
                       <button
-                        onClick={() => setShowStatusNote(transition.target)}
+                        onClick={() => setShowStatusNote(transition.key)}
                         className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white rounded-xl shadow-sm transition-all ${transition.color}`}
                       >
                         {transition.icon}

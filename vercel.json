@@ -1,11 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/request-escalation",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/action-overdue",
+      "path": "/api/cron/daily",
       "schedule": "0 9 * * *"
     }
   ]

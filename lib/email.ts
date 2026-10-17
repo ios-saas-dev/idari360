@@ -843,3 +843,293 @@ export async function sendReportDigestEmail({
 
   return sendEmail({ to, subject, html });
 }
+
+/* ============================================================================
+   7. PLANLI DENETİM HATIRLATMALARI (Paket 2)
+============================================================================ */
+
+/**
+ * Planlanan denetim tarihine 7/3/1 gün kala denetçiye gönderilen hatırlatma.
+ */
+export async function sendAuditUpcomingReminderEmail({
+  to,
+  recipientName,
+  auditTitle,
+  facilityName,
+  plannedDate,
+  daysLeft,
+  auditUrl,
+}: {
+  to: string;
+  recipientName?: string;
+  auditTitle: string;
+  facilityName: string;
+  plannedDate: string;
+  daysLeft: number;
+  auditUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const subject = `🗓️ [Denetim Hatırlatması] ${daysLeft} gün kaldı — ${facilityName}`;
+
+  const contentHtml = `
+    <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Sn. ${recipientName},` : 'Merhaba,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      Sorumluluğunuzdaki planlı denetim <strong>${daysLeft} gün sonra</strong> gerçekleştirilecek.
+      Denetimi zamanında tamamlayabilmeniz için hatırlatıyoruz.
+    </p>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; width: 42%;">Denetim</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${auditTitle}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">Tesis</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${facilityName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">Planlanan Tarih</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${plannedDate}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; color: #64748b; font-size: 13px;">Kalan Süre</td>
+        <td style="padding: 10px 0; color: ${daysLeft <= 1 ? '#dc2626' : '#d97706'}; font-size: 13px; font-weight: 700;">${daysLeft} gün</td>
+      </tr>
+    </table>
+
+    ${auditUrl ? `
+    <div style="text-align: center; margin: 20px 0 4px 0;">
+      <a href="${auditUrl}" style="display: inline-block; background-color: #0f1c2e; color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 12px 24px; border-radius: 10px;">
+        Denetimi Aç
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: subject,
+    badgeText: daysLeft <= 1 ? 'SON HATIRLATMA' : 'DENETİM HATIRLATMASI',
+    badgeColor: daysLeft <= 1 ? '#dc2626' : '#2563eb',
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}
+
+/**
+ * Planlanan tarihi geçtiği hâlde tamamlanmayan denetim için gecikme bildirimi.
+ */
+export async function sendAuditOverdueReminderEmail({
+  to,
+  recipientName,
+  auditTitle,
+  facilityName,
+  plannedDate,
+  daysOverdue,
+  auditUrl,
+}: {
+  to: string;
+  recipientName?: string;
+  auditTitle: string;
+  facilityName: string;
+  plannedDate: string;
+  daysOverdue: number;
+  auditUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const subject = `⚠️ [GECİKMİŞ DENETİM] ${auditTitle} — ${daysOverdue} gündür tamamlanmadı`;
+
+  const contentHtml = `
+    <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Sn. ${recipientName},` : 'Merhaba,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      Planlanan tarihi geçmiş ve henüz tamamlanmamış bir denetim bulunuyor.
+      Lütfen denetimi en kısa sürede tamamlayın.
+    </p>
+
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+      <p style="color: #b91c1c; font-size: 13px; font-weight: 700; margin: 0 0 4px 0;">
+        ${daysOverdue} gündür gecikmede
+      </p>
+      <p style="color: #7f1d1d; font-size: 12.5px; margin: 0;">
+        Planlanan tarih: <strong>${plannedDate}</strong>
+      </p>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; width: 42%;">Denetim</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${auditTitle}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; color: #64748b; font-size: 13px;">Tesis</td>
+        <td style="padding: 10px 0; color: #0f172a; font-size: 13px; font-weight: 600;">${facilityName}</td>
+      </tr>
+    </table>
+
+    ${auditUrl ? `
+    <div style="text-align: center; margin: 20px 0 4px 0;">
+      <a href="${auditUrl}" style="display: inline-block; background-color: #dc2626; color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 12px 24px; border-radius: 10px;">
+        Denetimi Aç ve Tamamla
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: subject,
+    badgeText: 'GECİKMİŞ DENETİM',
+    badgeColor: '#dc2626',
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}
+
+/* ============================================================================
+   8. AKSİYON KAPATMA ONAY AKIŞI E-POSTALARI (Paket 2)
+============================================================================ */
+
+/**
+ * Sorumlu çözümü tamamlayıp onaya gönderdiğinde yöneticilere giden bildirim.
+ */
+export async function sendActionApprovalRequestEmail({
+  to,
+  recipientName,
+  actionNumber,
+  title,
+  facilityName,
+  submittedByName,
+  evidenceNote,
+  actionUrl,
+}: {
+  to: string;
+  recipientName?: string;
+  actionNumber: string;
+  title: string;
+  facilityName: string;
+  submittedByName?: string;
+  evidenceNote?: string;
+  actionUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const subject = `🔔 [Onayınız Bekleniyor] ${actionNumber}: ${title}`;
+
+  const contentHtml = `
+    <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Sn. ${recipientName},` : 'Merhaba,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      <strong>${facilityName}</strong> tesisindeki bir aksiyonun çözümü tamamlandı olarak işaretlendi.
+      Kapatma onayınız bekleniyor.
+    </p>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; width: 42%;">Aksiyon No</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${actionNumber}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">Başlık</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${title}</td>
+      </tr>
+      ${submittedByName ? `
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">Gönderen</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${submittedByName}</td>
+      </tr>` : ''}
+    </table>
+
+    ${evidenceNote ? `
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+      <p style="color: #15803d; font-size: 12px; font-weight: 700; margin: 0 0 6px 0; text-transform: uppercase;">Çözüm Açıklaması</p>
+      <p style="color: #166534; font-size: 13px; line-height: 1.6; margin: 0;">${evidenceNote}</p>
+    </div>` : ''}
+
+    ${actionUrl ? `
+    <div style="text-align: center; margin: 20px 0 4px 0;">
+      <a href="${actionUrl}" style="display: inline-block; background-color: #d97706; color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 12px 24px; border-radius: 10px;">
+        Aksiyonu İncele ve Onayla
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: subject,
+    badgeText: 'AKSİYON ONAYI',
+    badgeColor: '#d97706',
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}
+
+/**
+ * Onay/red sonucu sorumluya (gönderene) bildirilir.
+ */
+export async function sendActionApprovalResultEmail({
+  to,
+  recipientName,
+  actionNumber,
+  title,
+  facilityName,
+  result,
+  rejectionNote,
+  actionUrl,
+}: {
+  to: string;
+  recipientName?: string;
+  actionNumber: string;
+  title: string;
+  facilityName: string;
+  result: 'approved' | 'rejected';
+  rejectionNote?: string;
+  actionUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const approved = result === 'approved';
+  const subject = approved
+    ? `✅ [Onaylandı] ${actionNumber} kapatıldı`
+    : `❌ [Reddedildi] ${actionNumber} — aksiyon yeniden açıldı`;
+
+  const contentHtml = `
+    <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Sn. ${recipientName},` : 'Merhaba,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      ${approved
+        ? `<strong>${facilityName}</strong> tesisindeki <strong>${actionNumber}</strong> numaralı aksiyon için gönderdiğiniz çözüm yönetici tarafından <strong>onaylandı</strong> ve aksiyon kapatıldı.`
+        : `<strong>${facilityName}</strong> tesisindeki <strong>${actionNumber}</strong> numaralı aksiyon için gönderdiğiniz çözüm <strong>reddedildi</strong>. Lütfen gerekçeyi inceleyip aksiyonu güncelleyerek yeniden onaya gönderin.`}
+    </p>
+
+    ${!approved && rejectionNote ? `
+    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+      <p style="color: #b91c1c; font-size: 12px; font-weight: 700; margin: 0 0 6px 0; text-transform: uppercase;">Red Gerekçesi</p>
+      <p style="color: #7f1d1d; font-size: 13px; line-height: 1.6; margin: 0;">${rejectionNote}</p>
+    </div>` : ''}
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; width: 42%;">Aksiyon No</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${actionNumber}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; color: #64748b; font-size: 13px;">Başlık</td>
+        <td style="padding: 10px 0; color: #0f172a; font-size: 13px; font-weight: 600;">${title}</td>
+      </tr>
+    </table>
+
+    ${actionUrl ? `
+    <div style="text-align: center; margin: 20px 0 4px 0;">
+      <a href="${actionUrl}" style="display: inline-block; background-color: #0f1c2e; color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 12px 24px; border-radius: 10px;">
+        Aksiyonu Görüntüle
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: subject,
+    badgeText: approved ? 'AKSİYON KAPATILDI' : 'ONAY REDDEDİLDİ',
+    badgeColor: approved ? '#16a34a' : '#dc2626',
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}

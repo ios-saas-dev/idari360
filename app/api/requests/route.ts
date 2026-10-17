@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendRequestNotificationEmail } from '@/lib/email';
 
@@ -202,7 +202,10 @@ export async function POST(request: NextRequest) {
 
   // Tesis Yetkililerini Bul ve Bilgilendir (Tesis Müdürü, Tesis Sorumlusu, Şirket Yöneticisi)
   try {
-    const { data: authorities } = await supabase
+    // Alıcılar ve in-app bildirimler admin istemcisiyle yürütülür: talebi açan
+    // kullanıcının RLS görünürlüğü (ör. çalışan kimseyi göremez) fan-out'u engellememeli.
+    const admin = createAdminClient();
+    const { data: authorities } = await admin
       .from('profiles')
       .select('id, email, full_name, role')
       .eq('company_id', targetCompanyId)
@@ -225,7 +228,10 @@ export async function POST(request: NextRequest) {
         related_type: 'request',
         related_id: newReq.id,
       }));
-      await supabase.from('notifications').insert(notifRows);
+      const { error: notifErr2 } = await admin.from('notifications').insert(notifRows);
+      if (notifErr2) {
+        console.error('Talep bildirimleri eklenemedi:', notifErr2.message);
+      }
 
       // 2. E-posta Bildirimleri (Resend Email)
       await Promise.allSettled(
