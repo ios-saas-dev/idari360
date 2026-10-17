@@ -341,7 +341,6 @@ export async function GET(request: NextRequest) {
     { key: 'yemekhane', label: 'Yemekhane', color: '#f97316' },
     { key: 'teknik', label: 'Teknik & Bakım', color: '#f43f5e' },
     { key: 'servis', label: 'Servis / Ulaşım', color: '#3b82f6' },
-    { key: 'filo', label: 'Filo & Taşıt', color: '#a855f7' },
     { key: 'varlik', label: 'Varlık & Zimmet', color: '#6366f1' },
     { key: 'diger', label: 'Diğer Talepler', color: '#64748b' },
   ];

@@ -668,7 +668,6 @@ export default function ActionsPage() {
                     <option value="yemekhane">Yemekhane</option>
                     <option value="servis">Servis</option>
                     <option value="temizlik">Temizlik</option>
-                    <option value="filo">Filo</option>
                     <option value="varlik">Varlık</option>
                     <option value="teknik">Teknik</option>
                     <option value="diger">Diğer</option>

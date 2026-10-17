@@ -17,7 +17,6 @@ import {
   TrendingUp,
   TrendingDown,
   Megaphone,
-  Car,
   Building2,
   BarChart3,
   Settings,
@@ -168,7 +167,6 @@ export default function DashboardPage() {
   const categories = [
     { name: 'Yemekhane', icon: UtensilsCrossed, color: 'text-green-500', href: '/dashboard/cafeteria' },
     { name: 'Servis', icon: Bus, color: 'text-blue-500', href: '/dashboard/shuttle' },
-    { name: 'Filo', icon: Car, color: 'text-cyan-500', href: '/dashboard/fleet' },
     { name: 'Temizlik', icon: Sparkles, color: 'text-purple-500', href: '/dashboard/cleaning' },
     { name: 'Varlıklar', icon: Package, color: 'text-indigo-500', href: '/dashboard/assets' },
     { name: 'Şubeler', icon: Building2, color: 'text-blue-600', href: '/dashboard/branches' },

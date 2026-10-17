@@ -53,7 +53,6 @@ const SERVICE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   yemekhane: { label: 'Yemekhane', color: 'bg-orange-50 text-orange-700 border-orange-200' },
   servis: { label: 'Personel Servisi', color: 'bg-blue-50 text-blue-700 border-blue-200' },
   temizlik: { label: 'Temizlik', color: 'bg-teal-50 text-teal-700 border-teal-200' },
-  filo: { label: 'Filo & Araç', color: 'bg-purple-50 text-purple-700 border-purple-200' },
   teknik: { label: 'Teknik Bakım', color: 'bg-amber-50 text-amber-700 border-amber-200' },
   guvenlik: { label: 'Güvenlik', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   diger: { label: 'Diğer Hizmetler', color: 'bg-slate-50 text-slate-700 border-slate-200' },
@@ -596,7 +595,6 @@ export default function SuppliersPage() {
                   <option value="yemekhane">Yemekhane</option>
                   <option value="servis">Personel Servisi</option>
                   <option value="temizlik">Temizlik</option>
-                  <option value="filo">Filo & Araç</option>
                   <option value="teknik">Teknik Bakım & Onarım</option>
                   <option value="guvenlik">Güvenlik</option>
                   <option value="diger">Diğer</option>

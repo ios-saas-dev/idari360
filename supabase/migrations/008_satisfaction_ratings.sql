@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS public.satisfaction_ratings (
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     facility_id UUID NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
     user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-    module VARCHAR(50) NOT NULL, -- yemekhane, servis, temizlik, filo, guvenlik
+    module VARCHAR(50) NOT NULL, -- yemekhane, servis, temizlik, guvenlik (filo kaldırıldı · migration 023)
     score NUMERIC(2,1) NOT NULL CHECK (score >= 1.0 AND score <= 5.0),
     comment TEXT,
     period DATE NOT NULL DEFAULT CURRENT_DATE,

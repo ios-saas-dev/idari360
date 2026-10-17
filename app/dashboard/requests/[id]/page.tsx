@@ -140,7 +140,6 @@ const CATEGORY_CONFIG: Record<string, { label: string; bg: string; text: string 
   yemekhane: { label: 'Yemekhane', bg: 'bg-orange-50', text: 'text-orange-700' },
   teknik: { label: 'Teknik & Bakım', bg: 'bg-rose-50', text: 'text-rose-700' },
   servis: { label: 'Servis / Ulaşım', bg: 'bg-sky-50', text: 'text-sky-700' },
-  filo: { label: 'Filo & Taşıt', bg: 'bg-purple-50', text: 'text-purple-700' },
   varlik: { label: 'Varlık & Zimmet', bg: 'bg-indigo-50', text: 'text-indigo-700' },
   diger: { label: 'Diğer Talepler', bg: 'bg-slate-50', text: 'text-slate-700' },
 };

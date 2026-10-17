@@ -93,7 +93,6 @@ DO $$ BEGIN
         'yemekhane',
         'servis',
         'temizlik',
-        'filo',
         'varlik',
         'teknik',
         'diger'

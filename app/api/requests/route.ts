@@ -106,7 +106,6 @@ export async function POST(request: NextRequest) {
     yemekhane: 'Yemekhane',
     servis: 'Servis',
     temizlik: 'Temizlik',
-    filo: 'Filo',
     varlik: 'Varlık',
     teknik: 'Teknik',
     diger: 'Diğer',

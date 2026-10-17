@@ -56,7 +56,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   yemekhane: 'Yemekhane',
   teknik: 'Teknik & Bakım',
   servis: 'Servis / Ulaşım',
-  filo: 'Filo & Taşıt',
   varlik: 'Varlık & Zimmet',
   diger: 'Diğer Talepler',
 };
@@ -181,8 +180,6 @@ export default function RequestsPage() {
         return 'bg-rose-50 text-rose-700 border-rose-200';
       case 'servis':
         return 'bg-sky-50 text-sky-700 border-sky-200';
-      case 'filo':
-        return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'varlik':
         return 'bg-indigo-50 text-indigo-700 border-indigo-200';
       case 'diger':

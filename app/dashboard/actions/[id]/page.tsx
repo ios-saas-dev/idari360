@@ -183,7 +183,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   yemekhane: 'Yemekhane',
   servis: 'Servis',
   temizlik: 'Temizlik',
-  filo: 'Filo',
   varlik: 'Varlık',
   teknik: 'Teknik',
   diger: 'Diğer',

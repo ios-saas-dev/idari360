@@ -20,7 +20,6 @@ const CATEGORIES = [
   { value: 'yemekhane', label: 'Yemekhane' },
   { value: 'servis', label: 'Servis' },
   { value: 'temizlik', label: 'Temizlik' },
-  { value: 'filo', label: 'Filo' },
   { value: 'varlik', label: 'Varlık' },
   { value: 'teknik', label: 'Teknik' },
   { value: 'diger', label: 'Diğer' },
