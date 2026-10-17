@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { computeFacilityHealth } from '@/lib/facility-health';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -76,14 +77,18 @@ export async function GET(request: NextRequest) {
     reqQuery = reqQuery.gte('created_at', startDate.toISOString());
   }
 
-  // 2. Aksiyonlar, Denetimler, Varlıklar
-  let actQuery = supabase.from('actions').select('id, status, priority, created_at, due_date');
+  // 2. Aksiyonlar, Denetimler, Varlıklar (+ Şube 360 / trafik ışığı için kırılımlar)
+  let actQuery = supabase.from('actions').select(`
+    id, action_number, title, status, priority, created_at, due_date, closed_at, facility_id, responsible_user_id,
+    facility:facilities!actions_facility_id_fkey(id, name, city),
+    responsible:profiles!actions_responsible_user_id_fkey(id, full_name)
+  `);
   if (cid) actQuery = actQuery.eq('company_id', cid);
 
-  let audQuery = supabase.from('audits').select('id, status, percentage, audit_date');
+  let audQuery = supabase.from('audits').select('id, status, percentage, audit_date, facility_id');
   if (cid) audQuery = audQuery.eq('company_id', cid);
 
-  let astQuery = supabase.from('assets').select('id, status, category');
+  let astQuery = supabase.from('assets').select('id, status, category, facility_id');
   if (cid) astQuery = astQuery.eq('company_id', cid);
 
   let facQuery = supabase.from('facilities').select('id, name, city').eq('is_active', true);
@@ -97,19 +102,45 @@ export async function GET(request: NextRequest) {
   if (activeFacilityId) satQuery = satQuery.eq('facility_id', activeFacilityId);
   if (startDate) satQuery = satQuery.gte('created_at', startDate.toISOString());
 
+  // Şube sağlık skoru için dönemden bağımsız son 90 gün pencereleri
+  const since90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  let reqHealthQuery = supabase
+    .from('requests')
+    .select('id, facility_id, sla_response_minutes, created_at')
+    .gte('created_at', since90.toISOString());
+  if (cid) reqHealthQuery = reqHealthQuery.eq('company_id', cid);
+  if (activeFacilityId) reqHealthQuery = reqHealthQuery.eq('facility_id', activeFacilityId);
+
+  let satHealthQuery = supabase
+    .from('satisfaction_ratings')
+    .select('id, facility_id, score, created_at')
+    .gte('created_at', since90.toISOString());
+  if (cid) satHealthQuery = satHealthQuery.eq('company_id', cid);
+  if (activeFacilityId) satHealthQuery = satHealthQuery.eq('facility_id', activeFacilityId);
+
+  // Tedarikçiler (şirket kapsamı) — performans karnesi rapora girer
+  let supQuery = supabase
+    .from('suppliers')
+    .select('id, name, service_type, is_active')
+    .order('name');
+  if (cid) supQuery = supQuery.eq('company_id', cid);
+
   if (activeFacilityId) {
     actQuery = actQuery.eq('facility_id', activeFacilityId);
     audQuery = audQuery.eq('facility_id', activeFacilityId);
     astQuery = astQuery.eq('facility_id', activeFacilityId);
   }
 
-  const [requestsRes, actionsRes, auditsRes, assetsRes, facilitiesRes, satisfactionRes] = await Promise.all([
+  const [requestsRes, actionsRes, auditsRes, assetsRes, facilitiesRes, satisfactionRes, reqHealthRes, satHealthRes, suppliersRes] = await Promise.all([
     reqQuery,
     actQuery,
     audQuery,
     astQuery,
     facQuery,
     satQuery,
+    reqHealthQuery,
+    satHealthQuery,
+    supQuery,
   ]);
 
   const requests = requestsRes.data || [];
@@ -118,6 +149,60 @@ export async function GET(request: NextRequest) {
   const assets = assetsRes.data || [];
   const facilities = facilitiesRes.data || [];
   const satisfactionRatings = (satisfactionRes.data || []) as any[];
+  const healthRequests = (reqHealthRes.data || []) as any[];
+  const healthRatings = (satHealthRes.data || []) as any[];
+  const suppliersList = (suppliersRes.data || []) as any[];
+
+  // Tedarikçi puanları (son dönem + önceki dönem karşılaştırması)
+  let supplierScores: any[] = [];
+  if (suppliersList.length > 0) {
+    const { data: scoreRows } = await supabase
+      .from('supplier_scores')
+      .select(
+        'id, supplier_id, period_start, period_end, service_quality, timeliness, complaint_management, staff_suitability, audit_results, action_closure, overall_score'
+      )
+      .in('supplier_id', suppliersList.map((s: any) => s.id))
+      .order('period_end', { ascending: false });
+    supplierScores = (scoreRows || []) as any[];
+  }
+
+  // Bu ay tamamlanan işler (dönem filtresinden bağımsız, takvim ayı)
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStartIso = monthStart.toISOString();
+  const monthStartDateStr = monthStartIso.slice(0, 10);
+
+  const completionCounts = await Promise.all([
+    (() => {
+      let q = supabase
+        .from('requests')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['cozumlendi', 'tamamlandi'])
+        .gte('closed_at', monthStartIso);
+      if (cid) q = q.eq('company_id', cid);
+      if (activeFacilityId) q = q.eq('facility_id', activeFacilityId);
+      return q;
+    })(),
+    (() => {
+      let q = supabase
+        .from('actions')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'kapali')
+        .gte('closed_at', monthStartIso);
+      if (cid) q = q.eq('company_id', cid);
+      if (activeFacilityId) q = q.eq('facility_id', activeFacilityId);
+      return q;
+    })(),
+    (() => {
+      let q = supabase
+        .from('audits')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['completed', 'approved'])
+        .gte('audit_date', monthStartDateStr);
+      if (cid) q = q.eq('company_id', cid);
+      if (activeFacilityId) q = q.eq('facility_id', activeFacilityId);
+      return q;
+    })(),
+  ]);
 
   // =========================================================================
   // A0. MEMNUNİYET SKORU (talep kapanış anketleri, 1-5)
@@ -472,6 +557,140 @@ export async function GET(request: NextRequest) {
     return { month: month_label, count, solved };
   });
 
+  // =========================================================================
+  // C. ŞUBE DURUM PANOSU (Trafik Işığı) — son 90 gün penceresi
+  // =========================================================================
+  const DONE_AUDIT_STATUSES = ['completed', 'approved'];
+  const OPEN_ACTION_STATUSES = ['acik', 'devam_ediyor', 'gecikti'];
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const since90DateStr = since90.toISOString().slice(0, 10);
+
+  const scopeFacilities = activeFacilityId
+    ? facilities.filter((f: any) => f.id === activeFacilityId)
+    : facilities;
+
+  const facilityHealth = scopeFacilities.map((f: any) => {
+    const fAudits = audits.filter(
+      (a: any) =>
+        a.facility_id === f.id &&
+        DONE_AUDIT_STATUSES.includes(a.status) &&
+        a.audit_date &&
+        String(a.audit_date) >= since90DateStr
+    );
+    const auditScores = fAudits
+      .map((a: any) => Number(a.percentage))
+      .filter((v: number) => Number.isFinite(v));
+    const auditAvg = auditScores.length
+      ? Math.round((auditScores.reduce((x: number, y: number) => x + y, 0) / auditScores.length) * 10) / 10
+      : null;
+
+    const fRatings = healthRatings
+      .filter((r: any) => r.facility_id === f.id)
+      .map((r: any) => Number(r.score))
+      .filter((v: number) => Number.isFinite(v) && v >= 1 && v <= 5);
+    const satAvg = fRatings.length
+      ? Math.round((fRatings.reduce((x: number, y: number) => x + y, 0) / fRatings.length) * 10) / 10
+      : null;
+
+    const fActions = actions.filter((a: any) => a.facility_id === f.id);
+    const overdueActions = fActions.filter(
+      (a: any) => OPEN_ACTION_STATUSES.includes(a.status) && a.due_date && a.due_date < todayStr
+    ).length;
+
+    const fReq = healthRequests.filter((r: any) => r.facility_id === f.id);
+    const respSamples = fReq
+      .map((r: any) => (r.sla_response_minutes != null ? Number(r.sla_response_minutes) : null))
+      .filter((v: number | null): v is number => v != null && v >= 0);
+    const avgResponse = respSamples.length
+      ? Math.round(respSamples.reduce((x: number, y: number) => x + y, 0) / respSamples.length)
+      : null;
+
+    const health = computeFacilityHealth({
+      audit_avg: auditAvg,
+      audit_count: fAudits.length,
+      satisfaction_avg: satAvg,
+      satisfaction_count: fRatings.length,
+      overdue_actions: overdueActions,
+      avg_response_minutes: avgResponse,
+      response_sample_count: respSamples.length,
+      request_total: fReq.length,
+    });
+
+    return {
+      facility_id: f.id,
+      facility_name: f.name,
+      city: f.city,
+      score: health.score,
+      color: health.color,
+      label: health.label,
+      parts: health.parts,
+    };
+  });
+
+  // =========================================================================
+  // D. TEDARİKÇİ PERFORMANS KARNESİ (son dönem + önceki dönem kıyası)
+  // =========================================================================
+  const suppliers = suppliersList.map((s: any) => {
+    const scores = supplierScores.filter((sc: any) => sc.supplier_id === s.id);
+    const latest = scores[0] || null;
+    const previous = scores[1] || null;
+    const avgOverall = scores.length
+      ? Math.round((scores.reduce((x: number, sc: any) => x + Number(sc.overall_score || 0), 0) / scores.length) * 10) / 10
+      : null;
+
+    return {
+      id: s.id,
+      name: s.name,
+      service_type: s.service_type,
+      is_active: s.is_active,
+      latest_period: latest?.period_end || null,
+      overall: latest ? Number(latest.overall_score) : null,
+      previous_overall: previous ? Number(previous.overall_score) : null,
+      avg_overall: avgOverall,
+      score_count: scores.length,
+      criteria: latest
+        ? {
+            service_quality: Number(latest.service_quality || 0),
+            timeliness: Number(latest.timeliness || 0),
+            complaint_management: Number(latest.complaint_management || 0),
+            staff_suitability: Number(latest.staff_suitability || 0),
+            audit_results: Number(latest.audit_results || 0),
+            action_closure: Number(latest.action_closure || 0),
+          }
+        : null,
+    };
+  });
+
+  // =========================================================================
+  // E. AÇIK AKSİYONLAR & BU AY TAMAMLANAN İŞLER
+  // =========================================================================
+  const openActionsList = actions
+    .filter((a: any) => OPEN_ACTION_STATUSES.includes(a.status))
+    .sort((a: any, b: any) => {
+      if (!a.due_date && !b.due_date) return 0;
+      if (!a.due_date) return 1;
+      if (!b.due_date) return -1;
+      return a.due_date < b.due_date ? -1 : 1;
+    })
+    .slice(0, 12)
+    .map((a: any) => ({
+      id: a.id,
+      action_number: a.action_number,
+      title: a.title,
+      priority: a.priority,
+      status: a.status,
+      due_date: a.due_date,
+      overdue: !!a.due_date && a.due_date < todayStr,
+      facility_name: a.facility?.name || null,
+      responsible_name: a.responsible?.full_name || null,
+    }));
+
+  const completedThisMonth = {
+    requests: completionCounts[0]?.count || 0,
+    actions: completionCounts[1]?.count || 0,
+    audits: completionCounts[2]?.count || 0,
+  };
+
   const summary = {
     user_scope: {
       role: profile.role,
@@ -521,6 +740,10 @@ export async function GET(request: NextRequest) {
       avg: satisfactionAvg,
       count: satScores.length,
     },
+    facility_health: facilityHealth,
+    suppliers,
+    open_actions: openActionsList,
+    completed_this_month: completedThisMonth,
   };
 
   return NextResponse.json({ data: summary });

@@ -21,6 +21,10 @@ import {
   User,
   UserCheck,
   Star,
+  Package,
+  Truck,
+  ArrowDownRight,
+  CalendarClock,
 } from 'lucide-react';
 
 interface SummaryData {
@@ -107,6 +111,64 @@ interface SummaryData {
     avg: number | null;
     count: number;
   };
+  actions: {
+    total: number;
+    open: number;
+    in_progress: number;
+    closed: number;
+    overdue: number;
+  };
+  audits: {
+    total: number;
+    completed: number;
+    avg_score: number;
+  };
+  assets: {
+    total: number;
+    active: number;
+    in_transfer: number;
+    broken: number;
+  };
+  facility_health: Array<{
+    facility_id: string;
+    facility_name: string;
+    city: string;
+    score: number | null;
+    color: 'green' | 'amber' | 'red' | 'gray';
+    label: string;
+    parts: Array<{ key: string; label: string; score: number | null; detail: string }>;
+  }>;
+  suppliers: Array<{
+    id: string;
+    name: string;
+    service_type: string;
+    is_active: boolean;
+    latest_period: string | null;
+    overall: number | null;
+    previous_overall: number | null;
+    avg_overall: number | null;
+    score_count: number;
+    criteria: {
+      service_quality: number;
+      timeliness: number;
+      complaint_management: number;
+      staff_suitability: number;
+      audit_results: number;
+      action_closure: number;
+    } | null;
+  }>;
+  open_actions: Array<{
+    id: string;
+    action_number: string;
+    title: string;
+    priority: string;
+    status: string;
+    due_date: string | null;
+    overdue: boolean;
+    facility_name: string | null;
+    responsible_name: string | null;
+  }>;
+  completed_this_month: { requests: number; actions: number; audits: number };
 }
 
 function formatMinutes(minutes?: number | null) {
@@ -117,6 +179,73 @@ function formatMinutes(minutes?: number | null) {
   const remainingMins = rounded % 60;
   return remainingMins > 0 ? `${hours} saat ${remainingMins} dk` : `${hours} saat`;
 }
+
+const PRIORITY_LABELS: Record<string, string> = {
+  dusuk: 'Düşük',
+  orta: 'Orta',
+  yuksek: 'Yüksek',
+  kritik: 'Kritik',
+};
+
+const PRIORITY_CLASSES: Record<string, string> = {
+  dusuk: 'bg-slate-100 text-slate-700 border-slate-200',
+  orta: 'bg-blue-50 text-blue-700 border-blue-200',
+  yuksek: 'bg-amber-50 text-amber-700 border-amber-200',
+  kritik: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+const ACTION_STATUS_LABELS: Record<string, string> = {
+  acik: 'Açık',
+  devam_ediyor: 'Devam Ediyor',
+  gecikti: 'Gecikti',
+  kapali: 'Kapalı',
+};
+
+const HEALTH_COLORS: Record<string, { dot: string; badge: string; card: string }> = {
+  green: {
+    dot: 'bg-emerald-500',
+    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    card: 'border-emerald-200/80 bg-emerald-50/20',
+  },
+  amber: {
+    dot: 'bg-amber-500',
+    badge: 'bg-amber-50 text-amber-700 border-amber-200',
+    card: 'border-amber-200/80 bg-amber-50/20',
+  },
+  red: {
+    dot: 'bg-rose-500',
+    badge: 'bg-rose-50 text-rose-700 border-rose-200',
+    card: 'border-rose-200/80 bg-rose-50/20',
+  },
+  gray: {
+    dot: 'bg-slate-300',
+    badge: 'bg-slate-100 text-slate-600 border-slate-200',
+    card: 'border-slate-200/80',
+  },
+};
+
+function formatDate(iso?: string | null) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function partScoreClass(score: number | null) {
+  if (score == null) return 'text-slate-300';
+  if (score >= 80) return 'text-emerald-600';
+  if (score >= 60) return 'text-amber-600';
+  return 'text-rose-600';
+}
+
+const SUPPLIER_CRITERIA: Array<{ key: string; label: string }> = [
+  { key: 'service_quality', label: 'Hizmet Kalitesi' },
+  { key: 'timeliness', label: 'Zamanında Hizmet' },
+  { key: 'complaint_management', label: 'Şikayet Yönetimi' },
+  { key: 'staff_suitability', label: 'Personel Uygunluğu' },
+  { key: 'audit_results', label: 'Denetim Sonuçları' },
+  { key: 'action_closure', label: 'Aksiyon Kapatma' },
+];
 
 export default function ReportsPage() {
   const [data, setData] = useState<SummaryData | null>(null);
@@ -185,7 +314,24 @@ export default function ReportsPage() {
     );
   }
 
-  const { kpi, donut_chart, duration_analysis, category_performance, facility_scorecards, resolver_scorecards = [], satisfaction, user_scope, facilities_list } = data;
+  const {
+    kpi,
+    donut_chart,
+    duration_analysis,
+    category_performance,
+    facility_scorecards,
+    resolver_scorecards = [],
+    satisfaction,
+    user_scope,
+    facilities_list,
+    facility_health = [],
+    suppliers = [],
+    open_actions = [],
+    completed_this_month: completedThisMonth = { requests: 0, actions: 0, audits: 0 },
+    actions: actionsSummary,
+    audits: auditsSummary,
+    assets: assetsSummary,
+  } = data;
 
   // Donut SVG Calculations
   const donutRadius = 60;
@@ -389,6 +535,95 @@ export default function ReportsPage() {
             <Star className="w-5 h-5" />
           </div>
         </div>
+      </div>
+
+      {/* =========================================================================
+          A2. ŞUBE DURUM PANOSU (Trafik Işığı) — son 90 gün
+         ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-5">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              <span>Şube Durum Panosu</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Son 90 gün verisiyle trafik ışığı: Denetim Puanı %35 · Memnuniyet %25 · Aksiyon Kapatma %25 · Müdahale Hızı %15
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold">
+            <span className="flex items-center gap-1.5 text-emerald-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> İyi (≥80)
+            </span>
+            <span className="flex items-center gap-1.5 text-amber-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Takip Gerekli (60-79)
+            </span>
+            <span className="flex items-center gap-1.5 text-rose-700">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Kritik (&lt;60)
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-500">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-300" /> Veri Yok
+            </span>
+          </div>
+        </div>
+
+        {facility_health.length === 0 ? (
+          <div className="text-center text-slate-400 text-sm py-8">
+            Gösterilecek tesis verisi bulunamadı.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {facility_health.map((h) => {
+              const palette = HEALTH_COLORS[h.color] || HEALTH_COLORS.gray;
+              return (
+                <div
+                  key={h.facility_id}
+                  className={`rounded-2xl border p-4 shadow-sm ${palette.card}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${palette.dot}`} />
+                        <span className="font-bold text-slate-900 text-sm truncate">{h.facility_name}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5 ml-5">
+                        {h.city || 'Şehir Belirtilmemiş'}
+                      </div>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border flex-shrink-0 ${palette.badge}`}
+                    >
+                      {h.score != null ? `${h.score}/100` : '—'}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-1.5">
+                    {h.parts.map((p) => (
+                      <div key={p.key} className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-slate-500 font-medium w-28 flex-shrink-0">{p.label}</span>
+                        <span className="text-slate-600 truncate flex-1">{p.detail}</span>
+                        <span className={`font-bold font-mono w-9 text-right ${partScoreClass(p.score)}`}>
+                          {p.score != null ? p.score : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-slate-200/60 flex items-center justify-between">
+                    <span className={`text-xs font-bold ${palette.badge.split(' ')[1]}`}>{h.label}</span>
+                    <a
+                      href={`/dashboard/branches/${h.facility_id}`}
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                    >
+                      Şube Detayı
+                      <ArrowUpRight className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* =========================================================================
@@ -905,6 +1140,270 @@ export default function ReportsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* =========================================================================
+          5. TEDARİKÇİ PERFORMANS KARNESİ
+         ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <Truck className="w-5 h-5 text-purple-600" />
+            <span>Tedarikçi Performans Karnesi</span>
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Son değerlendirme dönemi ve önceki döneme göre değişim (hizmet, zamanındalık, şikayet, personel, denetim, aksiyon kapatma)
+          </p>
+        </div>
+
+        {suppliers.length === 0 ? (
+          <div className="text-center text-slate-400 text-sm py-8">
+            Kayıtlı tedarikçi bulunamadı veya henüz karne puanı girilmedi.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
+                  <th className="py-3.5 px-6">Tedarikçi</th>
+                  <th className="py-3.5 px-4 text-center">Son Dönem</th>
+                  <th className="py-3.5 px-4 text-center">Genel Puan</th>
+                  <th className="py-3.5 px-4 text-center">Değişim</th>
+                  <th className="py-3.5 px-6">Kriter Puanları</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {suppliers.map((s) => {
+                  const delta =
+                    s.overall != null && s.previous_overall != null
+                      ? Math.round((s.overall - s.previous_overall) * 10) / 10
+                      : null;
+                  const overallClass =
+                    s.overall == null
+                      ? 'bg-slate-100 text-slate-500 border-slate-200'
+                      : s.overall >= 85
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : s.overall >= 70
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200';
+
+                  return (
+                    <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-4 px-6">
+                        <div className="font-bold text-slate-900 text-sm">{s.name}</div>
+                        <div className="text-[11px] text-slate-400 capitalize">
+                          {s.service_type}
+                          {!s.is_active && ' · Pasif'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-center text-slate-600 whitespace-nowrap">
+                        {s.latest_period ? formatDate(s.latest_period) : '—'}
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${overallClass}`}
+                        >
+                          {s.overall != null ? s.overall.toFixed(0) : '—'}
+                        </span>
+                        <div className="text-[10px] text-slate-400 mt-1">
+                          {s.score_count > 0
+                            ? `${s.score_count} dönem ort: ${s.avg_overall?.toFixed(1) ?? '—'}`
+                            : 'Puan yok'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        {delta != null ? (
+                          <span
+                            className={`inline-flex items-center gap-1 font-bold ${
+                              delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-rose-600' : 'text-slate-500'
+                            }`}
+                          >
+                            {delta > 0 ? (
+                              <TrendingUp className="w-3.5 h-3.5" />
+                            ) : delta < 0 ? (
+                              <ArrowDownRight className="w-3.5 h-3.5" />
+                            ) : null}
+                            {delta > 0 ? '+' : ''}
+                            {delta.toFixed(1)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-6">
+                        {s.criteria ? (
+                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1.5 max-w-lg">
+                            {SUPPLIER_CRITERIA.map((c) => {
+                              const val = (s.criteria as any)[c.key];
+                              return (
+                                <div key={c.key} className="flex items-center justify-between gap-2">
+                                  <span className="text-[10px] text-slate-500 truncate">{c.label}</span>
+                                  <span className="text-[11px] font-bold font-mono text-slate-700">
+                                    {Number(val || 0).toFixed(0)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">Değerlendirme yok</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* =========================================================================
+          6. BU AY TAMAMLANAN İŞLER & AÇIK AKSİYONLAR
+         ========================================================================= */}
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          {/* Bu Ay Tamamlanan İşler */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-1">
+              <CalendarClock className="w-5 h-5 text-teal-600" />
+              <span>Bu Ay Tamamlanan İşler</span>
+            </h2>
+            <p className="text-xs text-slate-400 mb-4">İçinde bulunulan takvim ayında kapatılan kayıtlar</p>
+
+            <div className="space-y-3">
+              {[
+                { label: 'Çözülen Talep', value: completedThisMonth.requests, cls: 'bg-emerald-50 text-emerald-600' },
+                { label: 'Kapatılan Aksiyon', value: completedThisMonth.actions, cls: 'bg-blue-50 text-blue-600' },
+                { label: 'Tamamlanan Denetim', value: completedThisMonth.audits, cls: 'bg-indigo-50 text-indigo-600' },
+              ].map((row) => (
+                <div
+                  key={row.label}
+                  className="flex items-center justify-between bg-slate-50/70 border border-slate-100 rounded-xl px-4 py-3"
+                >
+                  <span className="text-xs font-semibold text-slate-600">{row.label}</span>
+                  <span className={`text-lg font-extrabold px-3 py-0.5 rounded-lg ${row.cls}`}>
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Operasyon Özeti */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6">
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 mb-4">
+              <Layers className="w-5 h-5 text-slate-500" />
+              <span>Operasyon Özeti</span>
+            </h2>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Aksiyonlar</span>
+                <span className="font-bold text-slate-800">
+                  {actionsSummary.total} toplam · {actionsSummary.open + actionsSummary.in_progress} açık ·{' '}
+                  <span className={actionsSummary.overdue > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                    {actionsSummary.overdue} gecikmiş
+                  </span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Denetimler</span>
+                <span className="font-bold text-slate-800">
+                  {auditsSummary.total} toplam · {auditsSummary.completed} tamamlanan · ort{' '}
+                  {auditsSummary.total > 0 ? `${auditsSummary.avg_score}/100` : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Varlıklar</span>
+                <span className="font-bold text-slate-800">
+                  {assetsSummary.total} toplam · {assetsSummary.active} aktif ·{' '}
+                  <span className={assetsSummary.broken > 0 ? 'text-rose-600' : 'text-slate-800'}>
+                    {assetsSummary.broken} arıza/bakım
+                  </span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Açık Aksiyonlar */}
+        <div className="xl:col-span-3 bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                <span>Açık Aksiyonlar</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Termin tarihi yaklaşan ve gecikmiş aksiyonlar öncelikli listelenir
+              </p>
+            </div>
+            {actionsSummary.overdue > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {actionsSummary.overdue} gecikmiş
+              </span>
+            )}
+          </div>
+
+          {open_actions.length === 0 ? (
+            <div className="text-center text-slate-400 text-sm py-10">
+              Açık aksiyon bulunmuyor.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
+                    <th className="py-3 px-6">Aksiyon</th>
+                    <th className="py-3 px-3 text-center">Tesis</th>
+                    <th className="py-3 px-3 text-center">Sorumlu</th>
+                    <th className="py-3 px-3 text-center">Öncelik</th>
+                    <th className="py-3 px-6 text-right">Termin</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {open_actions.map((a) => (
+                    <tr key={a.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-6 max-w-[260px]">
+                        <div className="font-bold text-slate-900 truncate">{a.title}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{a.action_number}</div>
+                      </td>
+                      <td className="py-3.5 px-3 text-center text-slate-600 whitespace-nowrap">
+                        {a.facility_name || '—'}
+                      </td>
+                      <td className="py-3.5 px-3 text-center text-slate-600 whitespace-nowrap">
+                        {a.responsible_name || '—'}
+                      </td>
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            PRIORITY_CLASSES[a.priority] || 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {PRIORITY_LABELS[a.priority] || a.priority}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-6 text-right whitespace-nowrap">
+                        <div className={`font-bold ${a.overdue ? 'text-rose-600' : 'text-slate-700'}`}>
+                          {formatDate(a.due_date)}
+                        </div>
+                        {a.overdue ? (
+                          <span className="text-[10px] font-bold text-rose-500">GECİKMİŞ</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">
+                            {ACTION_STATUS_LABELS[a.status] || a.status}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
