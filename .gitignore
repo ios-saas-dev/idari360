@@ -50,3 +50,4 @@ scratch/
 
 .vercel
 .env*
+build_out.txt

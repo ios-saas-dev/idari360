@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useTransition } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   Package,
   Search,
@@ -20,8 +21,11 @@ import {
   Tag,
   DollarSign,
   FileText,
+  Eye,
+  QrCode,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import { getAssetStatusMeta } from '@/lib/asset-flow';
 
 interface AssignedUser {
   id: string;
@@ -57,46 +61,14 @@ interface ProfileOption {
   email: string;
 }
 
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; badgeClass: string }
-> = {
-  aktif: {
-    label: 'Aktif',
-    badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-  },
-  devirde: {
-    label: 'Devirde / Zimmetli',
-    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200/80',
-  },
-  iade: {
-    label: 'İade Edildi',
-    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
-  },
-  ariza: {
-    label: 'Arızalı',
-    badgeClass: 'bg-red-50 text-red-700 border-red-200/80',
-  },
-  bakimda: {
-    label: 'Bakımda',
-    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200/80',
-  },
-  kayip: {
-    label: 'Kayıp',
-    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200/80',
-  },
-  hurda: {
-    label: 'Hurda',
-    badgeClass: 'bg-gray-100 text-gray-700 border-gray-300',
-  },
-};
-
 const STATUS_TABS = [
   { id: '', label: 'Tümü' },
   { id: 'aktif', label: 'Aktif' },
-  { id: 'devirde', label: 'Devirde' },
+  { id: 'devirde', label: 'Zimmetli' },
+  { id: 'iade', label: 'İade Edildi' },
   { id: 'ariza', label: 'Arızalı' },
   { id: 'bakimda', label: 'Bakımda' },
+  { id: 'kayip', label: 'Kayıp' },
   { id: 'hurda', label: 'Hurda' },
 ];
 
@@ -149,7 +121,6 @@ export default function AssetsPage() {
     purchase_date: '',
     purchase_price: '',
     notes: '',
-    status: 'aktif',
   });
 
   // Debounce search query 400ms
@@ -186,7 +157,9 @@ export default function AssetsPage() {
         const total = allAssets.length;
         const aktif = allAssets.filter((a) => a.status === 'aktif').length;
         const zimmetli = allAssets.filter(
-          (a) => a.status === 'devirde' || Boolean(a.assigned_to)
+          (a) =>
+            (a.status === 'devirde' || Boolean(a.assigned_to)) &&
+            !['kayip', 'hurda'].includes(a.status)
         ).length;
         const arizali = allAssets.filter((a) => a.status === 'ariza').length;
         setStats({ total, aktif, zimmetli, arizali });
@@ -241,7 +214,6 @@ export default function AssetsPage() {
       purchase_date: '',
       purchase_price: '',
       notes: '',
-      status: 'aktif',
     });
     setFormError(null);
     setIsAddModalOpen(true);
@@ -257,7 +229,6 @@ export default function AssetsPage() {
       purchase_date: asset.purchase_date || '',
       purchase_price: asset.purchase_price ? String(asset.purchase_price) : '',
       notes: asset.notes || '',
-      status: asset.status,
     });
     setFormError(null);
     setIsEditModalOpen(true);
@@ -321,8 +292,6 @@ export default function AssetsPage() {
         name: formData.name.trim(),
         category: formData.category,
         location: formData.location.trim(),
-        assigned_to: formData.assigned_to || null,
-        status: formData.status,
         purchase_date: formData.purchase_date || null,
         purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : null,
         notes: formData.notes.trim(),
@@ -537,10 +506,7 @@ export default function AssetsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {assets.map((asset) => {
-                  const statusInfo = STATUS_CONFIG[asset.status] || {
-                    label: asset.status,
-                    badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
-                  };
+                  const statusInfo = getAssetStatusMeta(asset.status);
 
                   return (
                     <tr key={asset.id} className="hover:bg-slate-50/70 transition-colors">
@@ -553,7 +519,13 @@ export default function AssetsPage() {
 
                       {/* Varlık Adı */}
                       <td className="py-3.5 px-4 font-medium text-slate-900">
-                        {asset.name}
+                        <Link
+                          href={`/dashboard/assets/${asset.id}`}
+                          className="hover:text-blue-700 hover:underline transition-colors"
+                          title="Varlık detayını aç"
+                        >
+                          {asset.name}
+                        </Link>
                       </td>
 
                       {/* Kategori */}
@@ -610,13 +582,22 @@ export default function AssetsPage() {
 
                       {/* İşlemler */}
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => handleOpenEditModal(asset)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Düzenle"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <Link
+                            href={`/dashboard/assets/${asset.id}`}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="Detay & QR"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Link>
+                          <button
+                            onClick={() => handleOpenEditModal(asset)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Düzenle"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -868,42 +849,37 @@ export default function AssetsPage() {
                 />
               </div>
 
-              {/* Durum & Kategori */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Durum
-                  </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+              {/* Kategori */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Kategori
+                </label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                >
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Durum ve zimmet bilgi notu */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-start gap-2">
+                <QrCode className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>
+                  Durum ve zimmet değişiklikleri{' '}
+                  <Link
+                    href={`/dashboard/assets/${selectedAsset.id}`}
+                    className="font-semibold underline hover:text-blue-900"
                   >
-                    <option value="aktif">Aktif</option>
-                    <option value="devirde">Devirde</option>
-                    <option value="iade">İade</option>
-                    <option value="ariza">Arızalı</option>
-                    <option value="bakimda">Bakımda</option>
-                    <option value="kayip">Kayıp</option>
-                    <option value="hurda">Hurda</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Kategori
-                  </label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
-                  >
-                    {CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    varlık detayındaki akış işlemleriyle
+                  </Link>{' '}
+                  yapılır ve geçmişe kaydedilir.
+                </span>
               </div>
 
               {/* Konum */}
@@ -917,25 +893,6 @@ export default function AssetsPage() {
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
                 />
-              </div>
-
-              {/* Zimmetlenecek Kişi */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Zimmetli Kişi
-                </label>
-                <select
-                  value={formData.assigned_to}
-                  onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
-                >
-                  <option value="">Atama Yok (Boşta)</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.full_name} ({p.email})
-                    </option>
-                  ))}
-                </select>
               </div>
 
               {/* Satın Alma Tarihi & Fiyatı */}

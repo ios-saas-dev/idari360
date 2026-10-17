@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     asset_code, name, category,
     location: location || '',
     assigned_to: assigned_to || null,
-    status: 'aktif',
+    status: assigned_to ? 'devirde' : 'aktif',
     purchase_date: purchase_date || null,
     purchase_price: purchase_price || null,
     notes: notes || '',
@@ -79,13 +79,19 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Log to asset_history
-  await supabase.from('asset_history').insert({
-    asset_id: data.id,
-    action: 'zimmet',
-    to_user_id: assigned_to || null,
-    note: 'Varlık sisteme eklendi',
-  });
+  // QR hedef yolu (etiket/QR okutma için kalıcı referans)
+  await supabase.from('assets').update({ qr_code: `/dashboard/assets/${data.id}` }).eq('id', data.id);
+
+  // Zimmetli eklenmişse ilk hareket kaydı (sistem tarihçesi)
+  if (assigned_to) {
+    const { data: target } = await supabase.from('profiles').select('full_name').eq('id', assigned_to).maybeSingle();
+    await supabase.from('asset_history').insert({
+      asset_id: data.id,
+      action: 'zimmet',
+      to_user_id: assigned_to,
+      note: `Varlık sisteme eklendi ve ${target?.full_name || 'personele'} zimmetlendi`,
+    });
+  }
 
   return NextResponse.json({ data }, { status: 201 });
 }
