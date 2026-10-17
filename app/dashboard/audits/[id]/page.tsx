@@ -19,6 +19,7 @@ import {
   Save,
   Check,
   Printer,
+  FileDown,
   ExternalLink,
   Camera,
   AlertCircle,
@@ -135,6 +136,8 @@ export default function AuditRunnerPage({
   const [isEditingPlanned, setIsEditingPlanned] = useState(false);
   const [plannedDraft, setPlannedDraft] = useState('');
   const [plannedSaving, setPlannedSaving] = useState(false);
+  // PDF rapor indirme durumu (sunucu taraflı rapor)
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<{
     text: string;
     type: 'success' | 'error';
@@ -233,6 +236,44 @@ export default function AuditRunnerPage({
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
+
+  // Sunucu taraflı PDF raporunu indir (Excel: "PDF raporu")
+  const handleDownloadPdf = async () => {
+    if (pdfLoading) return;
+    try {
+      setPdfLoading(true);
+      const res = await fetch(`/api/audits/${auditId}/pdf`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'PDF raporu oluşturulamadı.');
+      }
+      const blob = await res.blob();
+
+      // Sunucudan gelen dosya adını kullan (yoksa varsayılan)
+      let filename = 'denetim-raporu.pdf';
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      if (match && match[1]) filename = match[1];
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setToastMessage({ text: 'PDF raporu indirildi.', type: 'success' });
+    } catch (err: any) {
+      setToastMessage({
+        text: err?.message || 'PDF raporu oluşturulamadı.',
+        type: 'error',
+      });
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const categories = useMemo(() => {
     return audit?.audit_type?.categories || [];
@@ -636,13 +677,27 @@ export default function AuditRunnerPage({
         {/* Action Buttons */}
         <div className="flex items-center gap-2.5">
           {isCompleted && (
-            <button
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl shadow-sm transition-colors"
-            >
-              <Printer className="w-4 h-4 text-slate-500" />
-              <span>Yazdır / PDF Rapor</span>
-            </button>
+            <>
+              <button
+                onClick={handleDownloadPdf}
+                disabled={pdfLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors disabled:opacity-60"
+              >
+                {pdfLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileDown className="w-4 h-4" />
+                )}
+                <span>{pdfLoading ? 'PDF Hazırlanıyor…' : 'PDF İndir'}</span>
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl shadow-sm transition-colors"
+              >
+                <Printer className="w-4 h-4 text-slate-500" />
+                <span>Yazdır</span>
+              </button>
+            </>
           )}
 
           {!isCompleted ? (

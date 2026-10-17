@@ -25,6 +25,7 @@ import {
   Play,
   Bus,
   ArrowRight,
+  BarChart3,
 } from 'lucide-react';
 
 interface AuditItem {
@@ -477,15 +478,24 @@ export default function AuditsPage() {
           </div>
         </div>
 
-        {canCreate && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium text-sm rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm"
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/dashboard/audits/analytics"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-medium text-sm rounded-xl hover:bg-slate-50 transition-colors shadow-sm"
           >
-            <Plus className="w-4 h-4" />
-            Yeni Denetim Başlat
-          </button>
-        )}
+            <BarChart3 className="w-4 h-4 text-slate-500" />
+            Denetim Analizi
+          </Link>
+          {canCreate && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium text-sm rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Yeni Denetim Başlat
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats Row (4 cards) */}
