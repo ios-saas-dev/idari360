@@ -25,16 +25,16 @@ export function getAdminSupabaseClient(): SupabaseClient {
   });
 }
 
-// Vercel Cron veya yönetici çağrısı için güvenlik doğrulaması
+// Vercel Cron güvenlik doğrulaması.
+// Vercel'de CRON_SECRET ortam değişkeni tanımlıysa, zamanlanmış çağrılarda bu
+// değeri otomatik olarak "Authorization: Bearer <CRON_SECRET>" başlığıyla gönderir.
+// Secret tanımlıyken YALNIZCA bu başlık kabul edilir; x-vercel-cron başlığı
+// istemci tarafından spoof edilebildiği için güvenlik dayanağı değildir.
 export function isCronAuthorized(request: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return true; // yerel geliştirme (secret tanımsız)
   const authHeader = request.headers.get('authorization');
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    const vercelCronHeader = request.headers.get('x-vercel-cron');
-    return Boolean(vercelCronHeader);
-  }
-  return true;
+  return authHeader === `Bearer ${cronSecret}`;
 }
 
 export function getBaseUrl(): string {
