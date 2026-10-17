@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
   const questionId = formData.get('question_id') ? String(formData.get('question_id')) : null;
   const actionId = formData.get('action_id') ? String(formData.get('action_id')) : null;
   const requestId = formData.get('request_id') ? String(formData.get('request_id')) : null;
+  const planId = formData.get('plan_id') ? String(formData.get('plan_id')) : null;
 
   // PDF yalnızca talep eklerinde serbest
   const pdfAllowed = context === 'request';
@@ -188,6 +189,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Aksiyon bulunamadı veya yetkiniz yok.' }, { status: 404 });
     }
     folder = `actions/${profile.company_id}/${action.id}`;
+  } else if (context === 'cleaning') {
+    if (!planId) {
+      return NextResponse.json({ error: 'Temizlik planı bilgisi eksik.' }, { status: 400 });
+    }
+    const { data: plan } = await supabase
+      .from('cleaning_plans')
+      .select('id, company_id')
+      .eq('id', planId)
+      .single();
+    if (!plan || plan.company_id !== profile.company_id) {
+      return NextResponse.json({ error: 'Temizlik planı bulunamadı veya yetkiniz yok.' }, { status: 404 });
+    }
+    folder = `cleaning-plans/${profile.company_id}/${plan.id}`;
   } else if (context === 'request') {
     if (requestId) {
       const { data: reqRow } = await supabase

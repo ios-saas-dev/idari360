@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   if (!['super_admin','company_admin','facility_manager','facility_officer'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
 
   const body = await req.json();
-  const { full_name, position, facility_id } = body;
+  const { full_name, position, facility_id, supervisor_id } = body;
   if (!full_name) return NextResponse.json({ error: 'Ad zorunlu' }, { status: 400 });
 
   const { data, error } = await supabase.from('cleaning_staff').insert({
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     facility_id: facility_id || profile!.facility_id,
     full_name,
     position: position || 'Temizlik Görevlisi',
+    supervisor_id: supervisor_id || null,
   }).select().single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -57,7 +58,7 @@ export async function PATCH(req: NextRequest) {
   if (!['super_admin','company_admin','facility_manager','facility_officer'].includes(profile?.role || '')) return NextResponse.json({ error: 'Yetersiz yetki' }, { status: 403 });
 
   const body = await req.json();
-  const { id, full_name, position, is_active, facility_id } = body;
+  const { id, full_name, position, is_active, facility_id, supervisor_id } = body;
   if (!id) return NextResponse.json({ error: 'ID zorunlu' }, { status: 400 });
 
   const updateData: Record<string, any> = {};
@@ -65,6 +66,34 @@ export async function PATCH(req: NextRequest) {
   if (position !== undefined) updateData.position = position;
   if (is_active !== undefined) updateData.is_active = is_active;
   if (facility_id !== undefined) updateData.facility_id = facility_id;
+
+  // Organizasyon şeması: bağlı olduğu kişi (döngü oluşturamaz)
+  if (supervisor_id !== undefined) {
+    const sup = (supervisor_id as string) || null;
+    if (sup === id) {
+      return NextResponse.json({ error: 'Kişi kendisinin bağlı olduğu kişi olamaz.' }, { status: 400 });
+    }
+    if (sup) {
+      let cursor: string | null = sup;
+      let depth = 0;
+      while (cursor && depth < 10) {
+        const lookup = (await supabase
+          .from('cleaning_staff')
+          .select('supervisor_id')
+          .eq('id', cursor)
+          .eq('company_id', profile!.company_id)
+          .maybeSingle()) as { data: { supervisor_id: string | null } | null };
+        const row = lookup.data;
+        if (!row) break;
+        if (row.supervisor_id === id) {
+          return NextResponse.json({ error: 'Bu atama hiyerarşide döngü oluşturur.' }, { status: 400 });
+        }
+        cursor = row.supervisor_id;
+        depth++;
+      }
+    }
+    updateData.supervisor_id = sup;
+  }
 
   const { data, error } = await supabase
     .from('cleaning_staff')

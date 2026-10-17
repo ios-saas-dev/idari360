@@ -18,11 +18,13 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|heic|heif)$/i;
 
 interface PhotoEvidenceUploaderProps {
-  /** Yükleme bağlamı: denetim kanıtı veya aksiyon fotoğrafı */
-  context: 'audit' | 'action';
+  /** Yükleme bağlamı: denetim kanıtı, aksiyon ya da temizlik planı fotoğrafı */
+  context: 'audit' | 'action' | 'cleaning';
   auditId?: string;
   questionId?: string;
   actionId?: string;
+  /** Temizlik planı tamamlama fotoğrafı için plan kimliği */
+  cleaningPlanId?: string;
   /** Mevcut görsel URL'i (varsa önizleme gösterilir) */
   currentUrl?: string | null;
   /** Denetim tamamlandıysa salt-okunur */
@@ -37,6 +39,7 @@ export default function PhotoEvidenceUploader({
   auditId,
   questionId,
   actionId,
+  cleaningPlanId,
   currentUrl,
   disabled = false,
   helperText = 'JPG, PNG, WEBP • en fazla 10 MB',
@@ -75,6 +78,8 @@ export default function PhotoEvidenceUploader({
       if (context === 'audit') {
         if (auditId) fd.append('audit_id', auditId);
         if (questionId) fd.append('question_id', questionId);
+      } else if (context === 'cleaning') {
+        if (cleaningPlanId) fd.append('plan_id', cleaningPlanId);
       } else if (actionId) {
         fd.append('action_id', actionId);
       }

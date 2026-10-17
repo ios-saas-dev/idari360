@@ -1145,3 +1145,111 @@ export async function sendActionApprovalResultEmail({
 
   return sendEmail({ to, subject, html });
 }
+
+/* ============================================================================
+   ATS — PLANLI TEMİZLİK BİLDİRİM E-POSTASI
+   Akış: temizlik firması tarih önerir → şube yöneticisi onaylar / yeni tarih
+   önerir → plan kesinleşir → temizlik fotoğraflı tamamlanır.
+============================================================================ */
+export async function sendCleaningPlanNotificationEmail({
+  to,
+  recipientName,
+  event,
+  planTitle,
+  facilityName,
+  plannedDate,
+  actorName,
+  note,
+  planUrl,
+}: {
+  to: string;
+  recipientName?: string;
+  event: 'oneri' | 'onay' | 'yeni_tarih' | 'tamamlandi';
+  planTitle: string;
+  facilityName: string;
+  plannedDate: string;
+  actorName?: string;
+  note?: string;
+  planUrl?: string;
+}): Promise<BaseEmailResponse> {
+  const meta: Record<string, { subject: string; badge: string; badgeColor: string; intro: string }> = {
+    oneri: {
+      subject: `🧹 [Onayınız Bekleniyor] ${planTitle} — ${plannedDate}`,
+      badge: 'ONAY BEKLİYOR',
+      badgeColor: '#d97706',
+      intro: `<strong>${facilityName}</strong> tesisi için <strong>${plannedDate}</strong> tarihine planlı temizlik önerildi. Onayınız bekleniyor.`,
+    },
+    yeni_tarih: {
+      subject: `🧹 [Yeni Tarih Önerildi] ${planTitle} — ${plannedDate}`,
+      badge: 'YENİ TARİH ÖNERİLDİ',
+      badgeColor: '#2563eb',
+      intro: `<strong>${facilityName}</strong> tesisi için önerdiğiniz planlı temizliğe yönetici <strong>yeni bir tarih önerdi</strong>. Lütfen inceleyin.`,
+    },
+    onay: {
+      subject: `✅ [Plan Onaylandı] ${planTitle} — ${plannedDate}`,
+      badge: 'PLAN ONAYLANDI',
+      badgeColor: '#16a34a',
+      intro: `<strong>${facilityName}</strong> tesisi için önerdiğiniz planlı temizlik <strong>onaylandı</strong> ve plan kesinleşti.`,
+    },
+    tamamlandi: {
+      subject: `✅ [Temizlik Tamamlandı] ${planTitle} — ${plannedDate}`,
+      badge: 'TAMAMLANDI',
+      badgeColor: '#16a34a',
+      intro: `<strong>${facilityName}</strong> tesisindeki planlı temizlik <strong>tamamlandı</strong> olarak işaretlendi. Fotoğraf ve notlar plana eklenmiştir.`,
+    },
+  };
+
+  const m = meta[event];
+  const subject = m.subject;
+
+  const contentHtml = `
+    <h2 style="color: #0f172a; font-size: 19px; font-weight: 700; margin: 0 0 8px 0;">
+      ${recipientName ? `Sn. ${recipientName},` : 'Merhaba,'}
+    </h2>
+    <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+      ${m.intro}
+    </p>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px; width: 42%;">Konu</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${planTitle}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">Tesis</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${facilityName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">${event === 'tamamlandi' ? 'Planlanan Tarih' : 'Önerilen Tarih'}</td>
+        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 600;">${plannedDate}</td>
+      </tr>
+      ${actorName ? `
+      <tr>
+        <td style="padding: 10px 0; color: #64748b; font-size: 13px;">${event === 'oneri' ? 'Öneren' : 'İşlemi Yapan'}</td>
+        <td style="padding: 10px 0; color: #0f172a; font-size: 13px; font-weight: 600;">${actorName}</td>
+      </tr>` : ''}
+    </table>
+
+    ${note ? `
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+      <p style="color: #64748b; font-size: 12px; font-weight: 700; margin: 0 0 6px 0; text-transform: uppercase;">Not</p>
+      <p style="color: #334155; font-size: 13px; line-height: 1.6; margin: 0;">${note}</p>
+    </div>` : ''}
+
+    ${planUrl ? `
+    <div style="text-align: center; margin: 20px 0 4px 0;">
+      <a href="${planUrl}" style="display: inline-block; background-color: #0f1c2e; color: #ffffff; text-decoration: none; font-size: 13.5px; font-weight: 600; padding: 12px 24px; border-radius: 10px;">
+        Planı Görüntüle
+      </a>
+    </div>` : ''}
+  `;
+
+  const html = renderBaseTemplate({
+    headerTitle: subject,
+    badgeText: m.badge,
+    badgeColor: m.badgeColor,
+    contentHtml,
+  });
+
+  return sendEmail({ to, subject, html });
+}
