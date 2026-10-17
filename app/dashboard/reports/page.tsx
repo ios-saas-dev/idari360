@@ -20,6 +20,7 @@ import {
   Info,
   User,
   UserCheck,
+  Star,
 } from 'lucide-react';
 
 interface SummaryData {
@@ -84,6 +85,8 @@ interface SummaryData {
     avg_resolution_minutes: number;
     on_target: boolean;
     target_badge: string;
+    satisfaction_avg: number | null;
+    satisfaction_count: number;
   }>;
   resolver_scorecards?: Array<{
     user_id: string;
@@ -97,7 +100,13 @@ interface SummaryData {
     avg_resolution_minutes: number;
     on_target: boolean;
     target_badge: string;
+    satisfaction_avg: number | null;
+    satisfaction_count: number;
   }>;
+  satisfaction: {
+    avg: number | null;
+    count: number;
+  };
 }
 
 function formatMinutes(minutes?: number | null) {
@@ -176,7 +185,7 @@ export default function ReportsPage() {
     );
   }
 
-  const { kpi, donut_chart, duration_analysis, category_performance, facility_scorecards, resolver_scorecards = [], user_scope, facilities_list } = data;
+  const { kpi, donut_chart, duration_analysis, category_performance, facility_scorecards, resolver_scorecards = [], satisfaction, user_scope, facilities_list } = data;
 
   // Donut SVG Calculations
   const donutRadius = 60;
@@ -263,7 +272,7 @@ export default function ReportsPage() {
       {/* =========================================================================
           A. ÖZET BİLGİ (KPI) KARTLARI (Ekranın En Üstü)
          ========================================================================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* 1. Toplam Açılan Talep */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex items-center justify-between">
           <div>
@@ -343,11 +352,11 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* 5. Ortalama Çözüm Süresi (T3 - T2) */}
+        {/* 5. Ortalama Çözüm Süresi (T5 - T2) */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Ort. Çözüm (T3 - T2)
+              Ort. Çözüm (T5 - T2)
             </p>
             <h3 className="text-2xl font-extrabold text-slate-900 mt-1 font-mono">
               {formatMinutes(kpi.avg_resolution_minutes)}
@@ -358,6 +367,26 @@ export default function ReportsPage() {
           </div>
           <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
             <Clock className="w-5 h-5" />
+          </div>
+        </div>
+
+        {/* 6. Memnuniyet Skoru (Kapanış Anketi) */}
+        <div className="bg-white rounded-2xl p-5 border border-amber-200 shadow-sm flex items-center justify-between bg-amber-50/25">
+          <div>
+            <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+              Memnuniyet Skoru
+            </p>
+            <h3 className="text-2xl font-extrabold text-amber-600 mt-1">
+              {satisfaction.avg != null
+                ? `${satisfaction.avg.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / 5`
+                : '—'}
+            </h3>
+            <p className="text-[11px] text-amber-700/80 mt-0.5">
+              {satisfaction.count > 0 ? `${satisfaction.count} değerlendirme` : 'Henüz değerlendirme yok'}
+            </p>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <Star className="w-5 h-5" />
           </div>
         </div>
       </div>
@@ -669,6 +698,7 @@ export default function ReportsPage() {
                   <th className="py-3.5 px-4 text-center">Çözülen</th>
                   <th className="py-3.5 px-4 text-center">Başarı Oranı</th>
                   <th className="py-3.5 px-4 text-center text-blue-700 bg-blue-50/40">Ort. Karşılama (T2-T1)</th>
+                  <th className="py-3.5 px-4 text-center text-amber-700 bg-amber-50/40">Memnuniyet (1-5)</th>
                   <th className="py-3.5 px-6 text-right">SLA Karşılama Durumu</th>
                 </tr>
               </thead>
@@ -712,6 +742,23 @@ export default function ReportsPage() {
                         {formatMinutes(f.avg_response_minutes)}
                       </td>
 
+                      <td className="py-4 px-4 text-center bg-amber-50/10">
+                        {f.satisfaction_count > 0 && f.satisfaction_avg != null ? (
+                          <div className="inline-flex items-center gap-1">
+                            <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                            <span className="font-bold text-amber-700">
+                              {f.satisfaction_avg.toLocaleString('tr-TR', {
+                                minimumFractionDigits: 1,
+                                maximumFractionDigits: 1,
+                              })}
+                            </span>
+                            <span className="text-[10px] text-slate-400">({f.satisfaction_count})</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -728,7 +775,7 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
                       Kayıtlı tesis karne verisi bulunamadı.
                     </td>
                   </tr>
@@ -744,7 +791,7 @@ export default function ReportsPage() {
             <div className="px-6 py-2 bg-indigo-50/50 border-b border-indigo-100 flex items-center justify-between text-xs text-indigo-800">
               <span className="flex items-center gap-1.5 font-medium">
                 <Info className="w-4 h-4 text-indigo-600" />
-                <span>Talep üzerine alındıktan kapanana kadar geçen süre (T3 - T2) doğrudan ilgili kişinin karnesine yazılır.</span>
+                <span>Talep üzerine alındıktan kapanana kadar geçen süre (T5 - T2) doğrudan ilgili kişinin karnesine yazılır.</span>
               </span>
               <span className="font-mono font-bold bg-white px-2.5 py-0.5 rounded-md border border-indigo-200">
                 Hedef Çözüm: &le; 4 Saat (240 dk)
@@ -761,7 +808,8 @@ export default function ReportsPage() {
                   <th className="py-3.5 px-4 text-center">İşlemde Olan</th>
                   <th className="py-3.5 px-4 text-center">Reddedilen</th>
                   <th className="py-3.5 px-4 text-center">Çözüm Oranı</th>
-                  <th className="py-3.5 px-4 text-center text-indigo-700 bg-indigo-50/40">Ort. Çözüm (T3-T2)</th>
+                  <th className="py-3.5 px-4 text-center text-indigo-700 bg-indigo-50/40">Ort. Çözüm (T5-T2)</th>
+                  <th className="py-3.5 px-4 text-center text-amber-700 bg-amber-50/40">Memnuniyet (1-5)</th>
                   <th className="py-3.5 px-6 text-right">SLA Çözüm Durumu</th>
                 </tr>
               </thead>
@@ -815,6 +863,23 @@ export default function ReportsPage() {
                         {formatMinutes(r.avg_resolution_minutes)}
                       </td>
 
+                      <td className="py-4 px-4 text-center bg-amber-50/10">
+                        {r.satisfaction_count > 0 && r.satisfaction_avg != null ? (
+                          <div className="inline-flex items-center gap-1">
+                            <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                            <span className="font-bold text-amber-700">
+                              {r.satisfaction_avg.toLocaleString('tr-TR', {
+                                minimumFractionDigits: 1,
+                                maximumFractionDigits: 1,
+                              })}
+                            </span>
+                            <span className="text-[10px] text-slate-400">({r.satisfaction_count})</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+
                       <td className="py-4 px-6 text-right whitespace-nowrap">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -831,7 +896,7 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                    <td colSpan={10} className="py-8 text-center text-slate-400">
                       Henüz talebi üzerine alıp sonuçlandıran sorumlu karne verisi bulunamadı.
                     </td>
                   </tr>

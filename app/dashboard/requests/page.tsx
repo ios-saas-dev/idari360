@@ -43,11 +43,11 @@ interface RequestItem {
 
 const STATUS_LABELS: Record<string, string> = {
   yeni: 'Açık / Beklemede',
-  islemde: 'İşlemde / Üzerime Alındı',
+  islemde: 'İşlemde',
   cozumlendi: 'Çözümlendi',
   tamamlandi: 'Çözümlendi',
   reddedildi: 'Reddedildi',
-  atandi: 'Atandı',
+  atandi: 'Onay Bekliyor',
   onaylandi: 'Onaylandı',
 };
 
@@ -228,7 +228,9 @@ export default function RequestsPage() {
   const statusTabs = [
     { key: 'all', label: 'Tüm Talepler' },
     { key: 'yeni', label: 'Açık / Beklemede' },
-    { key: 'islemde', label: 'İşlemde / Üzerime Alındı' },
+    { key: 'atandi', label: 'Onay Bekleyen' },
+    { key: 'onaylandi', label: 'İşlem Bekleyen' },
+    { key: 'islemde', label: 'İşlemde' },
     { key: 'cozumlendi', label: 'Çözümlendi' },
     { key: 'reddedildi', label: 'Reddedildi' },
   ];

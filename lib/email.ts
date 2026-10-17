@@ -336,19 +336,31 @@ export async function sendRequestNotificationEmail({
     islemde: {
       label: 'Talep İşleme Alındı',
       color: '#d97706',
-      badge: 'İŞLEMDE (T2)',
+      badge: 'İŞLEMDE',
       desc: `${changerName ? changerName + ' isimli tesis sorumlusu' : 'Tesis sorumlusu'} talebinizi işleme aldı.`,
+    },
+    atandi: {
+      label: 'Talep Sorumluya Atandı (Onay Bekliyor)',
+      color: '#7c3aed',
+      badge: 'ONAY BEKLİYOR',
+      desc: `${changerName ? changerName + ' isimli tesis sorumlusu' : 'Tesis sorumlusu'} talebinizi karşılanmak üzere üzerine aldı. Yönetici onayı sonrası işleme başlanacaktır.`,
+    },
+    onaylandi: {
+      label: 'Talep Yönetici Tarafından Onaylandı',
+      color: '#4f46e5',
+      badge: 'ONAYLANDI',
+      desc: 'Talebiniz yönetici tarafından onaylanmıştır. Çözüm süreci başlatılacaktır.',
     },
     cozumlendi: {
       label: 'Talep Çözümlendi Olarak Kapatıldı',
       color: '#16a34a',
-      badge: 'ÇÖZÜMLENDİ (T3)',
+      badge: 'ÇÖZÜMLENDİ',
       desc: 'Talebiniz başarıyla çözümlenmiş ve kapatılmıştır.',
     },
     reddedildi: {
       label: 'Talep Reddedildi',
       color: '#dc2626',
-      badge: 'REDDEDİLDİ (T3)',
+      badge: 'REDDEDİLDİ',
       desc: 'Talebiniz incelenmiş ve reddedilmiştir.',
     },
   };

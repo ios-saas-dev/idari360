@@ -21,6 +21,9 @@ import {
   ExternalLink,
   FileText,
   ShieldAlert,
+  ShieldCheck,
+  Play,
+  Star,
   Award,
 } from 'lucide-react';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -37,6 +40,8 @@ interface RequestDetail {
   created_at: string;
   updated_at?: string;
   assigned_at?: string | null;
+  approved_at?: string | null;
+  started_at?: string | null;
   closed_at?: string | null;
   resolution_note?: string | null;
   resolution_photos?: string[] | null;
@@ -46,9 +51,18 @@ interface RequestDetail {
   sla_total_minutes?: number | null;
   created_by?: string;
   assigned_to?: string | null;
+  approved_by?: string | null;
   creator?: { id: string; full_name: string; email: string; avatar_url?: string } | null;
   assignee?: { id: string; full_name: string; email: string; avatar_url?: string } | null;
+  approver?: { id: string; full_name: string; email: string; avatar_url?: string } | null;
   facility?: { id: string; name: string; city: string } | null;
+  satisfaction?: Array<{
+    id: string;
+    score: number;
+    comment?: string | null;
+    created_at: string;
+    user_id?: string;
+  }> | null;
   request_comments?: Array<{
     id: string;
     comment: string;
@@ -78,7 +92,7 @@ const STATUS_CONFIG: Record<
     dot: 'bg-blue-500',
   },
   islemde: {
-    label: 'İşlemde / Üzerime Alındı',
+    label: 'İşlemde',
     bg: 'bg-amber-50',
     text: 'text-amber-700',
     border: 'border-amber-200',
@@ -106,14 +120,14 @@ const STATUS_CONFIG: Record<
     dot: 'bg-rose-500',
   },
   atandi: {
-    label: 'Atandı',
+    label: 'Onay Bekliyor',
     bg: 'bg-purple-50',
     text: 'text-purple-700',
     border: 'border-purple-200',
     dot: 'bg-purple-500',
   },
   onaylandi: {
-    label: 'Onaylandı',
+    label: 'Onaylandı (İşlem Bekliyor)',
     bg: 'bg-indigo-50',
     text: 'text-indigo-700',
     border: 'border-indigo-200',
@@ -186,6 +200,14 @@ export default function RequestDetailPage({
 
   // Action / Take over loading
   const [takeOverLoading, setTakeOverLoading] = useState(false);
+  const [approveLoading, setApproveLoading] = useState(false);
+  const [startLoading, setStartLoading] = useState(false);
+
+  // Memnuniyet anketi state
+  const [satisfactionScore, setSatisfactionScore] = useState(0);
+  const [satisfactionComment, setSatisfactionComment] = useState('');
+  const [satisfactionSubmitting, setSatisfactionSubmitting] = useState(false);
+  const [satisfactionError, setSatisfactionError] = useState<string | null>(null);
 
   // Resolution Pop-up Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -267,11 +289,7 @@ export default function RequestDetailPage({
       const res = await fetch(`/api/requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'take_over',
-          status: 'islemde',
-          note: `Talep ${currentUser?.fullName || 'Tesis Sorumlusu'} tarafından üzerine alındı (T2: Karşılama)`,
-        }),
+        body: JSON.stringify({ action: 'take_over' }),
       });
 
       if (!res.ok) {
@@ -284,6 +302,86 @@ export default function RequestDetailPage({
       alert(err.message || 'İşlem başarısız.');
     } finally {
       setTakeOverLoading(false);
+    }
+  };
+
+  // Adım 3 (T3): Yönetici Onayı ("Talebi Onayla" butonu)
+  const handleApprove = async () => {
+    if (approveLoading) return;
+    setApproveLoading(true);
+    try {
+      const res = await fetch(`/api/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve' }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Talep onaylanırken bir hata oluştu.');
+      }
+
+      await fetchRequestDetail();
+    } catch (err: any) {
+      alert(err.message || 'İşlem başarısız.');
+    } finally {
+      setApproveLoading(false);
+    }
+  };
+
+  // Adım 4 (T4): İşleme Başlama ("İşleme Başla" butonu)
+  const handleStart = async () => {
+    if (startLoading) return;
+    setStartLoading(true);
+    try {
+      const res = await fetch(`/api/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Talep işleme alınırken bir hata oluştu.');
+      }
+
+      await fetchRequestDetail();
+    } catch (err: any) {
+      alert(err.message || 'İşlem başarısız.');
+    } finally {
+      setStartLoading(false);
+    }
+  };
+
+  // Memnuniyet Anketi Gönder (1-5)
+  const handleSatisfactionSubmit = async () => {
+    if (satisfactionSubmitting) return;
+    if (satisfactionScore < 1) {
+      setSatisfactionError('Lütfen 1-5 arasında bir puan seçiniz.');
+      return;
+    }
+    setSatisfactionSubmitting(true);
+    setSatisfactionError(null);
+    try {
+      const res = await fetch(`/api/requests/${id}/satisfaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score: satisfactionScore,
+          comment: satisfactionComment.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Değerlendirme kaydedilemedi.');
+      }
+
+      await fetchRequestDetail();
+    } catch (err: any) {
+      setSatisfactionError(err.message || 'Değerlendirme kaydedilemedi.');
+    } finally {
+      setSatisfactionSubmitting(false);
     }
   };
 
@@ -372,6 +470,16 @@ export default function RequestDetailPage({
 
   const canTakeAction = isManagerOrAdmin && isFacilityAuthorized;
 
+  // Onay yetkisi: Tesis Müdürü ve üzeri roller (Tesis Sorumlusu onay veremez)
+  const isApproverRole = ['super_admin', 'company_admin', 'facility_manager'].includes(currentUser?.role || '');
+  const canApprove = isApproverRole && isFacilityAuthorized;
+
+  // İşleme başlama yetkisi: talebi üzerine alan sorumlu veya yöneticiler
+  const canStartRequest =
+    canTakeAction &&
+    (requestData?.assigned_to === currentUser?.id ||
+      ['super_admin', 'company_admin', 'facility_manager'].includes(currentUser?.role || ''));
+
   // Sorumlu / Yetkili kontrolü (Atanan kişi veya idari yönetici/yetkili)
   const isResponsible = isManagerOrAdmin || (Boolean(requestData?.assigned_to) && requestData?.assigned_to === currentUser?.id);
   const isFulfilled = requestData ? requestData.status !== 'yeni' : false;
@@ -439,6 +547,7 @@ export default function RequestDetailPage({
 
   const isClosed = requestData.status === 'cozumlendi' || requestData.status === 'reddedildi' || requestData.status === 'tamamlandi';
   const isResolved = requestData.status === 'cozumlendi' || requestData.status === 'tamamlandi';
+  const satisfaction = requestData.satisfaction && requestData.satisfaction.length > 0 ? requestData.satisfaction[0] : null;
 
   return (
     <div className="space-y-6">
@@ -674,6 +783,153 @@ export default function RequestDetailPage({
             </div>
           </div>
 
+          {/* Memnuniyet Anketi (Talep sahibi — kapanış sonrası 1-5 puan) */}
+          {isResolved && currentUser?.id === requestData.created_by && (
+            <div className="bg-white rounded-2xl p-6 sm:p-7 border border-emerald-200/70 shadow-sm space-y-4">
+              {satisfaction ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                      <Star className="w-5 h-5 fill-emerald-500 text-emerald-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Değerlendirmeniz İçin Teşekkürler</h3>
+                      <p className="text-xs text-slate-500">Memnuniyet geri bildiriminiz kayıtlara işlenmiştir.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Star
+                        key={i}
+                        className={`w-5 h-5 ${
+                          i <= Math.round(satisfaction.score)
+                            ? 'text-amber-400 fill-amber-400'
+                            : 'text-slate-200 fill-slate-200'
+                        }`}
+                      />
+                    ))}
+                    <span className="text-sm font-bold text-slate-700 ml-1.5">{satisfaction.score}/5</span>
+                  </div>
+
+                  {satisfaction.comment && (
+                    <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 text-sm text-slate-700 whitespace-pre-wrap">
+                      {satisfaction.comment}
+                    </div>
+                  )}
+
+                  <p className="text-[11px] text-slate-400">{formatDate(satisfaction.created_at)}</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0">
+                      <Star className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Çözümden Memnun Kaldınız mı?</h3>
+                      <p className="text-xs text-slate-500">
+                        Talebiniz kapatıldı. Hizmet kalitemizi 1-5 arasında puanlayabilirsiniz.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setSatisfactionScore(i);
+                          setSatisfactionError(null);
+                        }}
+                        title={`${i}/5`}
+                        className="p-1 rounded-lg hover:bg-amber-50 transition-colors active:scale-95"
+                      >
+                        <Star
+                          className={`w-8 h-8 ${
+                            i <= satisfactionScore
+                              ? 'text-amber-400 fill-amber-400'
+                              : 'text-slate-300 hover:text-amber-300'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    {satisfactionScore > 0 && (
+                      <span className="text-sm font-bold text-slate-700 ml-1.5">{satisfactionScore}/5</span>
+                    )}
+                  </div>
+
+                  <textarea
+                    value={satisfactionComment}
+                    onChange={(e) => setSatisfactionComment(e.target.value)}
+                    rows={2}
+                    maxLength={1000}
+                    placeholder="Yorumunuz (isteğe bağlı)..."
+                    className="w-full text-sm rounded-xl border border-slate-200 p-3 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none"
+                  />
+
+                  {satisfactionError && (
+                    <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2.5">
+                      {satisfactionError}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSatisfactionSubmit}
+                      disabled={satisfactionSubmitting || satisfactionScore < 1}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-sm transition-all active:scale-[0.98]"
+                    >
+                      {satisfactionSubmitting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>Değerlendirmeyi Gönder</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Talep Sahibi Memnuniyeti (sorumlular görünümü) */}
+          {isResolved && currentUser?.id !== requestData.created_by && satisfaction && (
+            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <Star className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-800">Talep Sahibi Memnuniyeti</div>
+                  <div className="text-[11px] text-slate-400">
+                    {requestData.creator?.full_name || 'Talep sahibi'} tarafından değerlendirildi
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Star
+                    key={i}
+                    className={`w-4 h-4 ${
+                      i <= Math.round(satisfaction.score)
+                        ? 'text-amber-400 fill-amber-400'
+                        : 'text-slate-200 fill-slate-200'
+                    }`}
+                  />
+                ))}
+                <span className="text-xs font-bold text-slate-700 ml-1">{satisfaction.score}/5</span>
+              </div>
+              {satisfaction.comment && (
+                <div className="w-full text-xs text-slate-600 bg-slate-50 rounded-lg p-2.5 border border-slate-100 whitespace-pre-wrap">
+                  {satisfaction.comment}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Yorumlar Bölümü */}
           {hideCommentsForRequester ? (
             <div className="bg-white rounded-2xl p-6 sm:p-7 border border-slate-200/80 shadow-sm space-y-4">
@@ -778,7 +1034,7 @@ export default function RequestDetailPage({
             {requestData.status === 'yeni' && (
               <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-3">
                 <div className="text-xs text-blue-900 leading-relaxed font-medium">
-                  Bu talep şu an <strong className="text-blue-700">Açık / Beklemede</strong> statüsündedir. Karşılama ve çözüm sürecini başlatmak için talebi üzerinize alabilirsiniz.
+                  Bu talep şu an <strong className="text-blue-700">Açık / Beklemede</strong> statüsündedir. Talebi üzerinize aldığınızda <strong>yönetici onayına</strong> sunulur; onay sonrası işleme başlayabilirsiniz.
                 </div>
 
                 {canTakeAction ? (
@@ -802,8 +1058,88 @@ export default function RequestDetailPage({
               </div>
             )}
 
-            {/* Adım 3: Sonuçlandırma - Çözüm veya Red (Statü: İşlemde ise) */}
-            {(requestData.status === 'islemde' || requestData.status === 'atandi' || requestData.status === 'onaylandi') && (
+            {/* Adım 3: Yönetici Onayı (Statü: Onay Bekliyor ise) */}
+            {requestData.status === 'atandi' && (
+              <div className="bg-purple-50/60 rounded-xl p-4 border border-purple-100 space-y-3">
+                <div className="text-xs text-purple-900 leading-relaxed font-medium">
+                  Bu talep <strong>{requestData.assignee?.full_name || 'yetkili'}</strong> tarafından karşılanmak
+                  üzere üzerine alınmıştır; <strong className="text-purple-700">yönetici onayı bekleniyor</strong>.
+                </div>
+
+                {canApprove ? (
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <button
+                      onClick={handleApprove}
+                      disabled={approveLoading}
+                      className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/20 active:scale-[0.98] transition-all disabled:opacity-50"
+                    >
+                      {approveLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
+                      <span>Talebi Onayla</span>
+                    </button>
+
+                    <button
+                      onClick={() => openResolutionModal('reddedildi')}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 active:scale-[0.98] transition-all"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reddet</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-purple-800 bg-purple-50 rounded-lg p-2.5 border border-purple-200">
+                    Onay yetkisi Tesis Müdürü, Şirket Yöneticisi ve Süper Yöneticiye aittir. Onay sonrası talep
+                    sorumlu tarafından işleme alınır.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Adım 4: İşleme Başlama (Statü: Onaylandı ise) */}
+            {requestData.status === 'onaylandi' && (
+              <div className="bg-indigo-50/60 rounded-xl p-4 border border-indigo-100 space-y-3">
+                <div className="text-xs text-indigo-900 leading-relaxed font-medium">
+                  Talep {requestData.approver?.full_name ? <strong>{requestData.approver.full_name}</strong> : 'yönetici'}{' '}
+                  tarafından <strong className="text-indigo-700">onaylanmıştır</strong>. Sorumlu:{' '}
+                  <strong>{requestData.assignee?.full_name || 'Atanmadı'}</strong>.
+                </div>
+
+                {canStartRequest ? (
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <button
+                      onClick={handleStart}
+                      disabled={startLoading}
+                      className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm text-white bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all disabled:opacity-50"
+                    >
+                      {startLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Play className="w-4 h-4" />
+                      )}
+                      <span>İşleme Başla</span>
+                    </button>
+
+                    <button
+                      onClick={() => openResolutionModal('reddedildi')}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 active:scale-[0.98] transition-all"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reddet</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-indigo-800 bg-indigo-50 rounded-lg p-2.5 border border-indigo-200">
+                    İşleme başlama yetkisi talebi üzerine alan sorumluya ve yöneticilere aittir.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Adım 5: Sonuçlandırma - Çözüm veya Red (Statü: İşlemde ise) */}
+            {requestData.status === 'islemde' && (
               <div className="space-y-3">
                 <div className="text-xs text-slate-600 leading-relaxed">
                   Talep şu anda <strong className="text-amber-700">İşlemde</strong> durumundadır.
@@ -925,7 +1261,64 @@ export default function RequestDetailPage({
                 )}
               </div>
 
-              {/* T3: Kapanış */}
+              {/* T3: Onay */}
+              <div className="relative">
+                <div
+                  className={`absolute -left-[27px] top-0.5 w-3.5 h-3.5 rounded-full ring-4 ring-white ${
+                    requestData.approved_at ? 'bg-indigo-500' : 'bg-slate-300'
+                  }`}
+                />
+                <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                  <span>T3: Onay (Yönetici)</span>
+                  {requestData.status === 'atandi' ? (
+                    <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-1.5 py-0.5 rounded">
+                      Onay Bekliyor
+                    </span>
+                  ) : requestData.approved_at ? (
+                    <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                      Onaylandı
+                    </span>
+                  ) : null}
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {requestData.approved_at
+                    ? formatDate(requestData.approved_at)
+                    : requestData.status === 'atandi'
+                      ? 'Yönetici onayı bekleniyor'
+                      : 'Henüz onaya sunulmadı'}
+                </div>
+                {requestData.approver?.full_name && (
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Onaylayan: {requestData.approver.full_name}
+                  </div>
+                )}
+              </div>
+
+              {/* T4: İşlem */}
+              <div className="relative">
+                <div
+                  className={`absolute -left-[27px] top-0.5 w-3.5 h-3.5 rounded-full ring-4 ring-white ${
+                    requestData.started_at ? 'bg-amber-500' : 'bg-slate-300'
+                  }`}
+                />
+                <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                  <span>T4: İşlem (İşleme Başlama)</span>
+                  {requestData.started_at && (
+                    <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                      Başladı
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {requestData.started_at
+                    ? formatDate(requestData.started_at)
+                    : requestData.approved_at
+                      ? 'İşleme başlanmayı bekliyor'
+                      : 'Henüz başlanmadı'}
+                </div>
+              </div>
+
+              {/* T5: Kapanış */}
               <div className="relative">
                 <div
                   className={`absolute -left-[27px] top-0.5 w-3.5 h-3.5 rounded-full ring-4 ring-white ${
@@ -937,7 +1330,7 @@ export default function RequestDetailPage({
                   }`}
                 />
                 <div className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                  <span>T3: Kapanış (Çözüm / Red)</span>
+                  <span>T5: Kapanış (Çözüm / Red)</span>
                   {isClosed && (
                     <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
                       Sonuç
@@ -950,7 +1343,7 @@ export default function RequestDetailPage({
 
                 {resolutionMinutes != null && (
                   <div className="text-[11px] font-semibold text-emerald-800 mt-1 bg-emerald-50 px-2 py-1 rounded-md block">
-                    Çözüm İşlem Süresi (T3 - T2): {formatMinutes(resolutionMinutes)}
+                    Çözüm İşlem Süresi (T5 - T2): {formatMinutes(resolutionMinutes)}
                   </div>
                 )}
               </div>
@@ -963,7 +1356,7 @@ export default function RequestDetailPage({
                   <div className="text-[11px] uppercase font-bold text-slate-500 tracking-wider">
                     Baştan Sona Toplam Süre
                   </div>
-                  <div className="text-xs text-slate-400">T3 - T1 (Açılıştan Kapanışa)</div>
+                  <div className="text-xs text-slate-400">T5 - T1 (Açılıştan Kapanışa)</div>
                 </div>
                 <div className="text-sm font-extrabold text-slate-900 font-mono">
                   {formatMinutes(totalMinutes)}

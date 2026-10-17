@@ -192,13 +192,14 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Log to request_history
-  await supabase.from('request_history').insert({
+  const { error: histInsertError } = await supabase.from('request_history').insert({
     request_id: newReq.id,
     new_status: 'yeni',
     changed_by: user.id,
     note: 'Talep oluşturuldu (T1: Açılış)',
     attachment_urls: cleanUrlList(attachment_urls),
   });
+  if (histInsertError) console.error('[request_history insert error]', histInsertError.message);
 
   // Tesis Yetkililerini Bul ve Bilgilendir (Tesis Müdürü, Tesis Sorumlusu, Şirket Yöneticisi)
   try {

@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient, createAdminClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendRequestNotificationEmail } from '@/lib/email';
 
@@ -30,13 +30,44 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       assignee:profiles!requests_assigned_to_fkey(id, full_name, email, avatar_url),
       approver:profiles!requests_approved_by_fkey(id, full_name, email, avatar_url),
       facility:facilities(id, name, city),
-      request_comments(id, comment, created_at, user:profiles(id, full_name, avatar_url)),
-      request_history(id, old_status, new_status, note, attachment_urls, created_at, changer:profiles(id, full_name))
+      request_comments(id, comment, created_at, user_id, user:profiles(id, full_name, avatar_url)),
+      request_history(id, old_status, new_status, note, attachment_urls, created_at, changed_by, changer:profiles(id, full_name)),
+      satisfaction:satisfaction_ratings(id, score, comment, created_at, user_id)
     `)
     .eq('id', id)
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
+
+  // Profil görünürlüğü zenginleştirmesi: RLS profil kısıtı nedeniyle personel/çalışan
+  // görünümünde başka kullanıcıların adları boş dönebilir (ör. "İşlem Yapan: Sistem").
+  // İsimler sistem istemcisiyle tamamlanır — yalnızca görüntü amaçlı ad/avatar bilgisi.
+  const d: any = data;
+  const profileIds = new Set<string>();
+  if (d.created_by) profileIds.add(d.created_by);
+  if (d.assigned_to) profileIds.add(d.assigned_to);
+  if (d.approved_by) profileIds.add(d.approved_by);
+  (d.request_comments || []).forEach((c: any) => { if (c.user_id) profileIds.add(c.user_id); });
+  (d.request_history || []).forEach((h: any) => { if (h.changed_by) profileIds.add(h.changed_by); });
+
+  if (profileIds.size > 0) {
+    const admin = createAdminClient();
+    const { data: profileRows } = await admin
+      .from('profiles')
+      .select('id, full_name, email, avatar_url')
+      .in('id', Array.from(profileIds));
+
+    const byId = new Map<string, any>((profileRows || []).map((p: any) => [p.id, p]));
+    if (!d.creator && d.created_by) d.creator = byId.get(d.created_by) || null;
+    if (!d.assignee && d.assigned_to) d.assignee = byId.get(d.assigned_to) || null;
+    if (!d.approver && d.approved_by) d.approver = byId.get(d.approved_by) || null;
+    (d.request_comments || []).forEach((c: any) => {
+      if (!c.user && c.user_id) c.user = byId.get(c.user_id) || null;
+    });
+    (d.request_history || []).forEach((h: any) => {
+      if (!h.changer && h.changed_by) h.changer = byId.get(h.changed_by) || null;
+    });
+  }
 
   // İş Kuralı: Açılan talepler karşılandığında talep hakkında olan yorum ve konuşmalar
   // yalnızca sorumlular arasında görünür olsun. Talebi açan kişi bu konuşmaları göremesin.
@@ -63,7 +94,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
 
   const body = await request.json();
-  const { status, action, assigned_to, approved_by, note, title, description, priority, resolution_photos } = body;
+  const { status, action, assigned_to, note, title, description, priority, resolution_photos } = body;
 
   // Get current request
   const { data: currentReq } = await supabase
@@ -87,7 +118,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const isMgr = ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'].includes(profile.role);
   const isCreator = currentReq.created_by === user.id;
 
-  const targetStatus = status || (action === 'take_over' ? 'islemde' : action === 'resolve' ? 'cozumlendi' : action === 'reject' ? 'reddedildi' : undefined);
+  // Eylem adı verildiyse hedef statü eylemden türetilir (eski istemciler status de gönderse eylem kazanır)
+  const actionStatusMap: Record<string, string> = {
+    take_over: 'atandi',
+    approve: 'onaylandi',
+    start: 'islemde',
+    resolve: 'cozumlendi',
+    reject: 'reddedildi',
+  };
+  const targetStatus = action && actionStatusMap[action] ? actionStatusMap[action] : status;
 
   // Employee can only cancel/reject their own 'yeni' request
   if (profile.role === 'employee' && !(isCreator && currentReq.status === 'yeni' && targetStatus === 'reddedildi')) {
@@ -99,7 +138,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (description && isMgr) updates.description = description;
   if (priority && isMgr) updates.priority = priority;
   if (assigned_to !== undefined && isMgr) updates.assigned_to = assigned_to;
-  if (approved_by !== undefined && isMgr) updates.approved_by = approved_by;
 
   let historyNote = note || null;
   let historyPhotos: string[] = [];
@@ -108,16 +146,112 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   // İŞ AKIŞI ADIMLARI VE KURALLARI
   // =========================================================================
 
-  // Adım 2: Talebi Üzerine Alma (Statü: İşlemde / Üzerime Alındı)
-  if (action === 'take_over' || (targetStatus === 'islemde' && currentReq.status === 'yeni')) {
+  // Adım 2 (T2): Talebi Üzerine Alma → Statü: Atandı (Yönetici Onayı Bekliyor)
+  if (action === 'take_over' || (targetStatus === 'atandi' && currentReq.status === 'yeni')) {
     if (!isMgr) {
       return NextResponse.json({ error: 'Talebi üzerinize alma yetkiniz yok.' }, { status: 403 });
     }
-    updates.status = 'islemde';
+    if (currentReq.status !== 'yeni') {
+      return NextResponse.json({ error: 'Bu talep zaten karşılanmıştır. Akış üzerinden ilerleyiniz.' }, { status: 400 });
+    }
+    updates.status = 'atandi';
     updates.assigned_to = user.id;
-    const nowIso = new Date().toISOString();
-    updates.assigned_at = nowIso;
-    historyNote = historyNote || `Talep Tesis Sorumlusu ${profile.full_name || 'yetkili'} tarafından üzerine alındı (T2: Karşılama)`;
+    updates.assigned_at = new Date().toISOString();
+    historyNote = historyNote || `Talep ${profile.full_name || 'yetkili'} tarafından karşılanmak üzere üzerine alındı — yönetici onayı bekleniyor (T2: Karşılama)`;
+
+    // Talebi açan kişiye bildirim gönder (Notifications)
+    if (currentReq.created_by && currentReq.created_by !== user.id) {
+      await supabase.from('notifications').insert({
+        company_id: profile.company_id,
+        user_id: currentReq.created_by,
+        title: 'Talebiniz Sorumluya Atandı',
+        message: `Talebiniz (${currentReq.request_number || 'Talep'}) ${profile.full_name || 'yetkili'} tarafından karşılanmak üzere üzerine alınmıştır. Yönetici onay süreci başlamıştır.`,
+        type: 'bildirim',
+        related_type: 'request',
+        related_id: id,
+      });
+    }
+
+    // Onay verebilecek yöneticilere sistem bildirimi (admin istemcisi: RLS görünürlüğünden bağımsız)
+    const admin = createAdminClient();
+    const { data: approverProfiles } = await admin
+      .from('profiles')
+      .select('id, role, facility_id')
+      .eq('company_id', currentReq.company_id)
+      .in('role', ['super_admin', 'company_admin', 'facility_manager'])
+      .eq('is_active', true);
+
+    const approverIds = (approverProfiles || [])
+      .filter((p) => p.role === 'super_admin' || p.role === 'company_admin' || p.facility_id === currentReq.facility_id)
+      .map((p) => p.id)
+      .filter((uid) => uid !== user.id && uid !== currentReq.created_by);
+
+    if (approverIds.length > 0) {
+      await admin.from('notifications').insert(
+        approverIds.map((uid) => ({
+          company_id: currentReq.company_id,
+          user_id: uid,
+          title: 'Talep Onayı Bekleniyor',
+          message: `${currentReq.request_number || 'Talep'} numaralı talep (${currentReq.title}) üzerine alındı; onayınız bekleniyor.`,
+          type: 'uyari',
+          related_type: 'request',
+          related_id: id,
+        }))
+      );
+    }
+  }
+  // Adım 3 (T3): Yönetici Onayı → Statü: Onaylandı
+  else if (action === 'approve' || (targetStatus === 'onaylandi' && currentReq.status === 'atandi')) {
+    if (!['super_admin', 'company_admin', 'facility_manager'].includes(profile.role)) {
+      return NextResponse.json({ error: 'Talep onaylama yetkisi Tesis Müdürü, Şirket Yöneticisi ve Süper Yöneticiye aittir.' }, { status: 403 });
+    }
+    if (currentReq.status !== 'atandi') {
+      return NextResponse.json({ error: 'Yalnızca sorumluya atanmış (onay bekleyen) talepler onaylanabilir.' }, { status: 400 });
+    }
+    updates.status = 'onaylandi';
+    updates.approved_by = user.id;
+    updates.approved_at = new Date().toISOString();
+    historyNote = historyNote || `Talep ${profile.full_name || 'yönetici'} tarafından onaylandı — işleme başlanabilir (T3: Onay)`;
+
+    // Talebi açan kişiye bildirim gönder (Notifications)
+    if (currentReq.created_by && currentReq.created_by !== user.id) {
+      await supabase.from('notifications').insert({
+        company_id: profile.company_id,
+        user_id: currentReq.created_by,
+        title: 'Talebiniz Onaylandı',
+        message: `Talebiniz (${currentReq.request_number || 'Talep'}) yönetici tarafından onaylanmıştır; işleme alınacaktır.`,
+        type: 'bildirim',
+        related_type: 'request',
+        related_id: id,
+      });
+    }
+
+    // Üzerine alan sorumluya bildirim (kendisi onaylamadıysa)
+    if (currentReq.assigned_to && currentReq.assigned_to !== user.id) {
+      await supabase.from('notifications').insert({
+        company_id: profile.company_id,
+        user_id: currentReq.assigned_to,
+        title: 'Üzerinize Aldığınız Talep Onaylandı',
+        message: `${currentReq.request_number} numaralı talep onaylandı. İşleme başlayabilirsiniz.`,
+        type: 'bildirim',
+        related_type: 'request',
+        related_id: id,
+      });
+    }
+  }
+  // Adım 4 (T4): İşleme Başlama → Statü: İşlemde
+  else if (action === 'start' || (targetStatus === 'islemde' && currentReq.status === 'onaylandi')) {
+    const isAssignee = currentReq.assigned_to === user.id;
+    const canStart = isAssignee || ['super_admin', 'company_admin', 'facility_manager'].includes(profile.role);
+    if (!isMgr || !canStart) {
+      return NextResponse.json({ error: 'Talebi işleme alma yetkiniz yok.' }, { status: 403 });
+    }
+    if (currentReq.status !== 'onaylandi') {
+      return NextResponse.json({ error: 'Talep işleme başlanmadan önce yönetici onayından geçmelidir.' }, { status: 400 });
+    }
+    updates.status = 'islemde';
+    updates.started_at = new Date().toISOString();
+    historyNote = historyNote || `Talep ${profile.full_name || 'sorumlu'} tarafından işleme alındı (T4: İşlem)`;
 
     // Talebi açan kişiye bildirim gönder (Notifications)
     if (currentReq.created_by && currentReq.created_by !== user.id) {
@@ -125,14 +259,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         company_id: profile.company_id,
         user_id: currentReq.created_by,
         title: 'Talebiniz İşleme Alındı',
-        message: `Talebiniz (${currentReq.request_number || 'Talep'}) Tesis Sorumlusu ${profile.full_name || ''} tarafından işleme alınmıştır.`,
+        message: `Talebiniz (${currentReq.request_number || 'Talep'}) ${profile.full_name || 'sorumlu'} tarafından işleme alınmıştır.`,
         type: 'bildirim',
         related_type: 'request',
         related_id: id,
       });
     }
   }
-  // Adım 3: Sonuçlandırma - Çözüm veya Red (Statü: Çözümlendi veya Reddedildi)
+  // Adım 5 (T5): Sonuçlandırma — Çözüm veya Red (Statü: Çözümlendi veya Reddedildi)
   else if (targetStatus === 'cozumlendi' || targetStatus === 'reddedildi') {
     // KURAL: Kim üstüne alırsa akış onun üzerinden ilerler (Üst yönetici override edebilir)
     const isAssignee = currentReq.assigned_to === user.id;
@@ -141,6 +275,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({
         error: 'Bu talep başka bir yetkili tarafından üzerine alınmıştır. Yalnızca talebi üzerine alan sorumlu veya şirket yöneticisi sonuçlandırabilir.',
       }, { status: 403 });
+    }
+
+    // AKIŞ KURALI: Çözüm yalnızca işleme başlanmış talepte; red onay/işlem aşamalarında yapılabilir
+    if (targetStatus === 'cozumlendi' && currentReq.status !== 'islemde') {
+      return NextResponse.json({
+        error: 'Talep çözüldü olarak kapatılmadan önce işleme başlanmalıdır (Sorumlu → Onay → İşlem → Kapanış).',
+      }, { status: 400 });
+    }
+    if (targetStatus === 'reddedildi' && !['yeni', 'atandi', 'onaylandi', 'islemde'].includes(currentReq.status)) {
+      return NextResponse.json({ error: 'Bu talep zaten kapatılmıştır.' }, { status: 400 });
     }
 
     // KRİTİK KURAL: Açıklama / Not Zorunlu Alan!
@@ -199,7 +343,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // Log to request_history
   if (targetStatus && targetStatus !== currentReq.status) {
-    await supabase.from('request_history').insert({
+    const { error: histErr } = await supabase.from('request_history').insert({
       request_id: id,
       old_status: currentReq.status,
       new_status: targetStatus,
@@ -207,6 +351,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       note: historyNote,
       attachment_urls: historyPhotos,
     });
+    if (histErr) console.error('[request_history insert error]', histErr.message);
 
     // E-posta Bildirimi Gönder (Resend Email)
     if (updated?.creator?.email) {

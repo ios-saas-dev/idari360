@@ -89,18 +89,27 @@ export async function GET(request: NextRequest) {
   let facQuery = supabase.from('facilities').select('id, name, city').eq('is_active', true);
   if (cid) facQuery = facQuery.eq('company_id', cid);
 
+  // Memnuniyet değerlendirmeleri (talep kapanış anketleri)
+  let satQuery = supabase
+    .from('satisfaction_ratings')
+    .select('id, score, request_id, created_at, facility_id, request:requests(assigned_to, facility_id)');
+  if (cid) satQuery = satQuery.eq('company_id', cid);
+  if (activeFacilityId) satQuery = satQuery.eq('facility_id', activeFacilityId);
+  if (startDate) satQuery = satQuery.gte('created_at', startDate.toISOString());
+
   if (activeFacilityId) {
     actQuery = actQuery.eq('facility_id', activeFacilityId);
     audQuery = audQuery.eq('facility_id', activeFacilityId);
     astQuery = astQuery.eq('facility_id', activeFacilityId);
   }
 
-  const [requestsRes, actionsRes, auditsRes, assetsRes, facilitiesRes] = await Promise.all([
+  const [requestsRes, actionsRes, auditsRes, assetsRes, facilitiesRes, satisfactionRes] = await Promise.all([
     reqQuery,
     actQuery,
     audQuery,
     astQuery,
     facQuery,
+    satQuery,
   ]);
 
   const requests = requestsRes.data || [];
@@ -108,6 +117,42 @@ export async function GET(request: NextRequest) {
   const audits = auditsRes.data || [];
   const assets = assetsRes.data || [];
   const facilities = facilitiesRes.data || [];
+  const satisfactionRatings = (satisfactionRes.data || []) as any[];
+
+  // =========================================================================
+  // A0. MEMNUNİYET SKORU (talep kapanış anketleri, 1-5)
+  // =========================================================================
+  const satScores = satisfactionRatings
+    .map((r) => Number(r.score))
+    .filter((v) => Number.isFinite(v) && v >= 1 && v <= 5);
+
+  const satisfactionAvg = satScores.length > 0
+    ? Math.round((satScores.reduce((a, b) => a + b, 0) / satScores.length) * 10) / 10
+    : null;
+
+  const satisfactionByAssignee = new Map<string, number[]>();
+  const satisfactionByFacility = new Map<string, number[]>();
+  satisfactionRatings.forEach((r) => {
+    const score = Number(r.score);
+    if (!Number.isFinite(score) || score < 1 || score > 5) return;
+
+    const assigneeId = r.request?.assigned_to;
+    if (assigneeId) {
+      if (!satisfactionByAssignee.has(assigneeId)) satisfactionByAssignee.set(assigneeId, []);
+      satisfactionByAssignee.get(assigneeId)!.push(score);
+    }
+
+    const fid = r.request?.facility_id || r.facility_id;
+    if (fid) {
+      if (!satisfactionByFacility.has(fid)) satisfactionByFacility.set(fid, []);
+      satisfactionByFacility.get(fid)!.push(score);
+    }
+  });
+
+  const avgOf = (values?: number[]) =>
+    values && values.length > 0
+      ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10
+      : null;
 
   // =========================================================================
   // A. ÖZET BİLGİ (KPI) METRİKLERİ VE SLA HESAPLARI
@@ -341,6 +386,8 @@ export async function GET(request: NextRequest) {
       avg_resolution_minutes: avgResol,
       on_target: onTarget,
       target_badge: onTarget ? 'Hedefte (≤ 60 dk)' : 'Gecikmeli',
+      satisfaction_avg: avgOf(satisfactionByFacility.get(f.facility_id)),
+      satisfaction_count: satisfactionByFacility.get(f.facility_id)?.length || 0,
     };
   });
 
@@ -410,6 +457,8 @@ export async function GET(request: NextRequest) {
       avg_resolution_minutes: avgResol,
       on_target: onTarget,
       target_badge: onTarget ? 'Hedefte (≤ 4s)' : 'Gecikmeli',
+      satisfaction_avg: avgOf(satisfactionByAssignee.get(res.user_id)),
+      satisfaction_count: satisfactionByAssignee.get(res.user_id)?.length || 0,
     };
   });
 
@@ -467,6 +516,10 @@ export async function GET(request: NextRequest) {
       active: assets.filter((a: any) => a.status === 'aktif').length,
       in_transfer: assets.filter((a: any) => a.status === 'devirde').length,
       broken: assets.filter((a: any) => a.status === 'ariza').length,
+    },
+    satisfaction: {
+      avg: satisfactionAvg,
+      count: satScores.length,
     },
   };
 
