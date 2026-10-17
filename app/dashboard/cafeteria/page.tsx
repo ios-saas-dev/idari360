@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
+import { createBrowserClient } from '@/lib/supabase/client';
 import {
   UtensilsCrossed,
   ChevronLeft,
@@ -15,6 +17,14 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Star,
+  MessageSquare,
+  ClipboardList,
+  Copy,
+  Scale,
+  Flame,
+  Coins,
+  ArrowRight,
 } from 'lucide-react';
 
 interface MenuItems {
@@ -33,8 +43,30 @@ interface CafeteriaMenu {
   items: MenuItems;
   planned_count: number;
   actual_count: number;
+  produced_kg?: number | null;
+  consumed_kg?: number | null;
+  waste_kg?: number | null;
+  unit_cost?: number | null;
   facility_id?: string;
   created_by?: string;
+}
+
+interface CafeteriaSatisfactionData {
+  month: string;
+  today: string;
+  mine: { id: string; score: number; comment: string | null; period: string } | null;
+  score_avg: number | null;
+  count: number;
+  distribution: Record<string, number> | null;
+  recent: Array<{ score: number; comment: string; period: string; user_name: string | null }> | null;
+}
+
+interface YemekhaneRequest {
+  id: string;
+  request_number?: string | null;
+  title: string;
+  status: string;
+  created_at: string;
 }
 
 interface CafeteriaSupplier {
@@ -77,6 +109,30 @@ const TURKISH_MONTHS = [
 const TURKISH_DAYS = [
   'Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'
 ];
+
+// Menü üretim/maliyet girişini yapabilecek roller (API ile aynı liste)
+const MENU_MANAGER_ROLES = ['super_admin', 'company_admin', 'facility_manager', 'facility_officer'];
+// Yemek tedarikçisi ekleyebilecek roller (cafeteria suppliers API ile aynı liste)
+const SUPPLIER_MANAGER_ROLES = ['super_admin', 'company_admin', 'facility_manager'];
+
+// Yemekhane talepleri için durum rozetleri (talep detay sayfasıyla aynı palet)
+const REQ_STATUS: Record<string, { label: string; classes: string; dot: string }> = {
+  yeni: { label: 'Açık', classes: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+  atandi: { label: 'Onay Bekliyor', classes: 'bg-purple-50 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
+  onaylandi: { label: 'Onaylandı', classes: 'bg-indigo-50 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' },
+  islemde: { label: 'İşlemde', classes: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  cozumlendi: { label: 'Çözümlendi', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  tamamlandi: { label: 'Çözümlendi', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  reddedildi: { label: 'Reddedildi', classes: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
+};
+
+function fmtNum(n: number, maxFrac = 1): string {
+  return n.toLocaleString('tr-TR', { maximumFractionDigits: maxFrac });
+}
+
+function fmtTL(n: number, maxFrac = 2): string {
+  return '₺' + n.toLocaleString('tr-TR', { maximumFractionDigits: maxFrac });
+}
 
 function getStartOfWeek(date: Date): Date {
   const d = new Date(date);
@@ -125,7 +181,28 @@ export default function CafeteriaPage() {
     kalori: '',
     planned_count: '',
     actual_count: '',
+    produced_kg: '',
+    consumed_kg: '',
+    waste_kg: '',
+    unit_cost: '',
   });
+
+  // Kullanıcı rolü (görünürlük ve düzenleme yetkileri)
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Günlük memnuniyet anketi
+  const [satisfaction, setSatisfaction] = useState<CafeteriaSatisfactionData | null>(null);
+  const [satScore, setSatScore] = useState<number>(0);
+  const [satComment, setSatComment] = useState('');
+  const [satSubmitting, setSatSubmitting] = useState(false);
+  const [satFlash, setSatFlash] = useState<string | null>(null);
+
+  // Yemekhane kategorili talepler
+  const [yemekhaneRequests, setYemekhaneRequests] = useState<YemekhaneRequest[]>([]);
+  const [yemekhaneTotal, setYemekhaneTotal] = useState(0);
+
+  // Hafta kopyalama
+  const [copying, setCopying] = useState(false);
 
   // Supplier Form
   const [supplierFormData, setSupplierFormData] = useState({
@@ -162,6 +239,43 @@ export default function CafeteriaPage() {
     return `${first.getDate()} ${TURKISH_MONTHS[first.getMonth()]} - ${last.getDate()} ${TURKISH_MONTHS[last.getMonth()]} ${last.getFullYear()}`;
   }, [weekDays]);
 
+  const monthLabel = useMemo(
+    () => `${TURKISH_MONTHS[currentWeekStart.getMonth()]} ${currentWeekStart.getFullYear()}`,
+    [currentWeekStart]
+  );
+
+  // Rol bazlı yetkiler (rol yüklenene kadar gizli tutulur)
+  const canManageMenus = userRole ? MENU_MANAGER_ROLES.includes(userRole) : false;
+  const canManageSuppliers = userRole ? SUPPLIER_MANAGER_ROLES.includes(userRole) : false;
+
+  // Bu ayın üretim / tüketim / fire / maliyet toplamları (yüklenen ayın menülerinden)
+  const monthStats = useMemo(() => {
+    let produced = 0;
+    let consumed = 0;
+    let waste = 0;
+    let cost = 0;
+    let portions = 0;
+    for (const m of menus) {
+      if (m.produced_kg != null) produced += Number(m.produced_kg) || 0;
+      if (m.consumed_kg != null) consumed += Number(m.consumed_kg) || 0;
+      if (m.waste_kg != null) waste += Number(m.waste_kg) || 0;
+      if (m.unit_cost != null) {
+        const cnt = m.actual_count || m.planned_count || 0;
+        cost += (Number(m.unit_cost) || 0) * cnt;
+        portions += cnt;
+      }
+    }
+    return {
+      produced,
+      consumed,
+      waste,
+      cost,
+      portions,
+      costPerPortion: portions > 0 ? cost / portions : 0,
+      fireRatio: produced > 0 ? (waste / produced) * 100 : null,
+    };
+  }, [menus]);
+
   // Fetch menus
   const fetchMenus = async (monthStr: string) => {
     setMenusLoading(true);
@@ -194,8 +308,37 @@ export default function CafeteriaPage() {
     }
   };
 
+  // Fetch günlük yemekhane memnuniyet anketi (aylık özet + kendi puanım)
+  const fetchSatisfaction = async (monthStr: string) => {
+    try {
+      const res = await fetch(`/api/cafeteria/satisfaction?month=${monthStr}`);
+      const json = await res.json();
+      if (!res.ok) return;
+      const d: CafeteriaSatisfactionData = json.data;
+      setSatisfaction(d);
+      setSatScore(d.mine?.score || 0);
+      setSatComment(d.mine?.comment || '');
+    } catch (err) {
+      console.error('Anket verisi yüklenemedi:', err);
+    }
+  };
+
+  // Fetch yemekhane kategorili son talepler
+  const fetchYemekhaneRequests = async () => {
+    try {
+      const res = await fetch('/api/requests?category=yemekhane&page=1');
+      const json = await res.json();
+      if (!res.ok) return;
+      setYemekhaneRequests((json.data || []).slice(0, 5));
+      setYemekhaneTotal(json.count || 0);
+    } catch (err) {
+      console.error('Yemekhane talepleri yüklenemedi:', err);
+    }
+  };
+
   useEffect(() => {
     fetchMenus(currentMonthString);
+    fetchSatisfaction(currentMonthString);
   }, [currentMonthString]);
 
   useEffect(() => {
@@ -203,6 +346,21 @@ export default function CafeteriaPage() {
       fetchSuppliers();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    fetchYemekhaneRequests();
+    (async () => {
+      try {
+        const supabase = createBrowserClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: p } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (p?.role) setUserRole(p.role);
+      } catch (err) {
+        console.error('Kullanıcı rolü alınamadı:', err);
+      }
+    })();
+  }, []);
 
   const prevWeek = () => {
     const prev = new Date(currentWeekStart);
@@ -240,6 +398,10 @@ export default function CafeteriaPage() {
       kalori: '',
       planned_count: '',
       actual_count: '',
+      produced_kg: '',
+      consumed_kg: '',
+      waste_kg: '',
+      unit_cost: '',
     });
     setIsMenuModalOpen(true);
   };
@@ -262,6 +424,10 @@ export default function CafeteriaPage() {
         items: itemsPayload,
         planned_count: menuFormData.planned_count ? parseInt(menuFormData.planned_count, 10) : 0,
         actual_count: menuFormData.actual_count ? parseInt(menuFormData.actual_count, 10) : 0,
+        produced_kg: menuFormData.produced_kg.trim() ? Number(menuFormData.produced_kg) : null,
+        consumed_kg: menuFormData.consumed_kg.trim() ? Number(menuFormData.consumed_kg) : null,
+        waste_kg: menuFormData.waste_kg.trim() ? Number(menuFormData.waste_kg) : null,
+        unit_cost: menuFormData.unit_cost.trim() ? Number(menuFormData.unit_cost) : null,
       };
 
       const res = await fetch('/api/cafeteria/menus', {
@@ -325,7 +491,69 @@ export default function CafeteriaPage() {
     }
   };
 
+  // Günlük memnuniyet değerlendirmesi gönder / güncelle
+  const handleSatisfactionSubmit = async () => {
+    if (!satScore) return;
+    setSatSubmitting(true);
+    setSatFlash(null);
+    try {
+      const res = await fetch('/api/cafeteria/satisfaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score: satScore, comment: satComment.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Değerlendirme kaydedilemedi');
+      setSatFlash(json.updated ? 'Değerlendirmeniz güncellendi. Teşekkürler!' : 'Değerlendirmeniz kaydedildi. Teşekkürler!');
+      fetchSatisfaction(currentMonthString);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSatSubmitting(false);
+    }
+  };
+
+  // Geçen haftanın menülerini bu haftaya kopyala
+  const handleCopyWeek = async () => {
+    if (
+      !confirm(
+        'Geçen haftanın menüleri bu haftaya kopyalanacak. Boş gün ve öğünler doldurulur; mevcut kayıtlara dokunulmaz. Devam edilsin mi?'
+      )
+    ) {
+      return;
+    }
+    setCopying(true);
+    try {
+      const res = await fetch('/api/cafeteria/menus/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week_start: formatDateISO(currentWeekStart) }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Kopyalama başarısız');
+      const { copied, skipped } = json.data || {};
+      if (copied > 0) {
+        alert(`${copied} menü kopyalandı.${skipped > 0 ? ` ${skipped} kayıt zaten mevcuttu, atlandı.` : ''}`);
+      } else {
+        alert(json.message || 'Kopyalanacak menü bulunamadı.');
+      }
+      fetchMenus(currentMonthString);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setCopying(false);
+    }
+  };
+
   const todayStr = formatDateISO(new Date());
+  const todayLabel = `${TURKISH_DAYS[new Date().getDay()]}, ${new Date().getDate()} ${TURKISH_MONTHS[new Date().getMonth()]}`;
+
+  // Modal içi üretim önizlemesi (kalan / fire oranı)
+  const modalProduced = menuFormData.produced_kg.trim() ? Number(menuFormData.produced_kg) : 0;
+  const modalConsumed = menuFormData.consumed_kg.trim() ? Number(menuFormData.consumed_kg) : 0;
+  const modalWaste = menuFormData.waste_kg.trim() ? Number(menuFormData.waste_kg) : 0;
+  const modalKalan = modalProduced - modalConsumed - modalWaste;
+  const modalFireRatio = modalProduced > 0 ? (modalWaste / modalProduced) * 100 : null;
 
   return (
     <div className="space-y-6">
@@ -343,20 +571,24 @@ export default function CafeteriaPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsSupplierModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-          >
-            <Truck className="w-4 h-4" />
-            Tedarikçi Ekle
-          </button>
-          <button
-            onClick={() => openMenuModal()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Menü Ekle
-          </button>
+          {canManageSuppliers && (
+            <button
+              onClick={() => setIsSupplierModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+            >
+              <Truck className="w-4 h-4" />
+              Tedarikçi Ekle
+            </button>
+          )}
+          {canManageMenus && (
+            <button
+              onClick={() => openMenuModal()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Menü Ekle
+            </button>
+          )}
         </div>
       </div>
 
@@ -391,6 +623,48 @@ export default function CafeteriaPage() {
       {/* TAB 1: Günlük Menüler */}
       {activeTab === 'menus' && (
         <div className="space-y-4">
+          {/* Ay Özeti: Üretim / Tüketim / Fire / Maliyet */}
+          <div className={`grid grid-cols-2 gap-3 ${canManageMenus ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <Scale className="w-4 h-4 text-blue-500" />
+                Üretim
+              </div>
+              <p className="mt-1.5 text-xl font-bold text-slate-900">{fmtNum(monthStats.produced)} kg</p>
+              <p className="text-[11px] text-slate-400">{monthLabel} toplamı</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <UtensilsCrossed className="w-4 h-4 text-emerald-500" />
+                Tüketim
+              </div>
+              <p className="mt-1.5 text-xl font-bold text-slate-900">{fmtNum(monthStats.consumed)} kg</p>
+              <p className="text-[11px] text-slate-400">{monthLabel} toplamı</p>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <Flame className="w-4 h-4 text-rose-500" />
+                Fire
+              </div>
+              <p className="mt-1.5 text-xl font-bold text-slate-900">{fmtNum(monthStats.waste)} kg</p>
+              <p className="text-[11px] text-slate-400">
+                {monthStats.fireRatio != null ? `Fire oranı %${fmtNum(monthStats.fireRatio)}` : 'Üretim girildikçe hesaplanır'}
+              </p>
+            </div>
+            {canManageMenus && (
+              <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                  <Coins className="w-4 h-4 text-amber-500" />
+                  Yemek Maliyeti
+                </div>
+                <p className="mt-1.5 text-xl font-bold text-slate-900">{fmtTL(monthStats.cost, 0)}</p>
+                <p className="text-[11px] text-slate-400">
+                  {monthStats.portions > 0 ? `Kişi başı ~${fmtTL(monthStats.costPerPortion)}` : 'Maliyet girildikçe hesaplanır'}
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Week Navigation bar */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 w-full md:w-auto">
@@ -414,6 +688,17 @@ export default function CafeteriaPage() {
             </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+              {canManageMenus && (
+                <button
+                  onClick={handleCopyWeek}
+                  disabled={copying}
+                  title="Geçen haftanın menülerini bu haftaya kopyalar"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 rounded-lg transition-colors border border-slate-200 disabled:opacity-50"
+                >
+                  {copying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+                  Geçen Haftayı Kopyala
+                </button>
+              )}
               <button
                 onClick={setTodayWeek}
                 className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
@@ -481,7 +766,7 @@ export default function CafeteriaPage() {
                         const menu = dayMenus.find((m) => m.meal_type === mealType);
 
                         if (!menu) {
-                          return (
+                          return canManageMenus ? (
                             <button
                               key={mealType}
                               onClick={() => openMenuModal(dayDateStr, mealType)}
@@ -496,6 +781,14 @@ export default function CafeteriaPage() {
                                 <Plus className="w-3.5 h-3.5" /> Menü Ekle
                               </span>
                             </button>
+                          ) : (
+                            <div
+                              key={mealType}
+                              className="w-full p-3 rounded-xl border border-dashed border-slate-200 bg-white/50 flex items-center justify-between"
+                            >
+                              <span className="text-xs font-medium text-slate-300">{MEAL_LABELS[mealType]}</span>
+                              <span className="text-[11px] text-slate-300">Menü yok</span>
+                            </div>
                           );
                         }
 
@@ -515,26 +808,32 @@ export default function CafeteriaPage() {
                                 >
                                   {MEAL_LABELS[mealType]}
                                 </span>
-                                <button
-                                  onClick={() => {
-                                    setMenuFormData({
-                                      menu_date: menu.menu_date,
-                                      meal_type: menu.meal_type,
-                                      corba: items.corba || '',
-                                      ana_yemek: items.ana_yemek || '',
-                                      yan_yemek: items.yan_yemek || '',
-                                      tatli_meyve: items.tatli_meyve || '',
-                                      kalori: items.kalori ? String(items.kalori) : '',
-                                      planned_count: menu.planned_count ? String(menu.planned_count) : '',
-                                      actual_count: menu.actual_count ? String(menu.actual_count) : '',
-                                    });
-                                    setIsMenuModalOpen(true);
-                                  }}
-                                  className="text-slate-400 hover:text-blue-600 transition-colors p-1"
-                                  title="Düzenle"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
+                                {canManageMenus && (
+                                  <button
+                                    onClick={() => {
+                                      setMenuFormData({
+                                        menu_date: menu.menu_date,
+                                        meal_type: menu.meal_type,
+                                        corba: items.corba || '',
+                                        ana_yemek: items.ana_yemek || '',
+                                        yan_yemek: items.yan_yemek || '',
+                                        tatli_meyve: items.tatli_meyve || '',
+                                        kalori: items.kalori ? String(items.kalori) : '',
+                                        planned_count: menu.planned_count ? String(menu.planned_count) : '',
+                                        actual_count: menu.actual_count ? String(menu.actual_count) : '',
+                                        produced_kg: menu.produced_kg != null ? String(menu.produced_kg) : '',
+                                        consumed_kg: menu.consumed_kg != null ? String(menu.consumed_kg) : '',
+                                        waste_kg: menu.waste_kg != null ? String(menu.waste_kg) : '',
+                                        unit_cost: menu.unit_cost != null ? String(menu.unit_cost) : '',
+                                      });
+                                      setIsMenuModalOpen(true);
+                                    }}
+                                    className="text-slate-400 hover:text-blue-600 transition-colors p-1"
+                                    title="Düzenle"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </div>
 
                               {/* Items list */}
@@ -586,6 +885,41 @@ export default function CafeteriaPage() {
                                 </span>
                               </div>
                             </div>
+
+                            {/* Üretim & maliyet satırları (girilmişse) */}
+                            {(menu.produced_kg != null ||
+                              menu.consumed_kg != null ||
+                              menu.waste_kg != null ||
+                              menu.unit_cost != null) && (
+                              <div className="mt-2 pt-2 border-t border-slate-100 space-y-1">
+                                {(menu.produced_kg != null || menu.consumed_kg != null || menu.waste_kg != null) && (
+                                  <div className="flex items-center gap-1 flex-wrap text-[11px] text-slate-500">
+                                    <Scale className="w-3 h-3 text-slate-400" />
+                                    {menu.produced_kg != null && <span>{fmtNum(Number(menu.produced_kg))} kg üretim</span>}
+                                    {menu.consumed_kg != null && <span>· {fmtNum(Number(menu.consumed_kg))} kg tüketim</span>}
+                                    {menu.waste_kg != null && (
+                                      <span className={Number(menu.waste_kg) > 0 ? 'text-rose-500 font-medium' : ''}>
+                                        · {fmtNum(Number(menu.waste_kg))} kg fire
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {menu.unit_cost != null && (
+                                  <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                                    <Coins className="w-3 h-3 text-slate-400" />
+                                    <span>{fmtTL(Number(menu.unit_cost))}/kişi</span>
+                                    {(menu.actual_count || menu.planned_count) > 0 && (
+                                      <span>
+                                        · Toplam{' '}
+                                        <span className="font-semibold text-slate-700">
+                                          {fmtTL(Number(menu.unit_cost) * (menu.actual_count || menu.planned_count), 0)}
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -595,6 +929,204 @@ export default function CafeteriaPage() {
               })}
             </div>
           )}
+
+          {/* Anket · Memnuniyet Özeti · Talepler */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* 1) Bugünün yemek değerlendirmesi */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-50 text-amber-500 rounded-lg">
+                  <Star className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Bugünün Yemek Değerlendirmesi</h3>
+                  <p className="text-[11px] text-slate-500">{todayLabel} · Günde bir değerlendirme</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setSatScore(i);
+                      setSatFlash(null);
+                    }}
+                    aria-label={`${i} puan ver`}
+                    title={`${i} puan`}
+                    className="p-0.5"
+                  >
+                    <Star
+                      className={`w-7 h-7 transition-colors ${
+                        i <= satScore ? 'fill-amber-400 text-amber-400' : 'text-slate-200 hover:text-amber-300'
+                      }`}
+                    />
+                  </button>
+                ))}
+                {satScore > 0 && <span className="ml-2 text-sm font-semibold text-slate-700">{satScore}/5</span>}
+              </div>
+
+              <textarea
+                rows={2}
+                placeholder="Yorumunuz (opsiyonel) — örn. bugünkü ana yemek hakkında"
+                value={satComment}
+                onChange={(e) => {
+                  setSatComment(e.target.value);
+                  setSatFlash(null);
+                }}
+                className="mt-3 w-full text-sm px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"
+              />
+
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  onClick={handleSatisfactionSubmit}
+                  disabled={!satScore || satSubmitting}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-sm transition-colors"
+                >
+                  {satSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  {satisfaction?.mine ? 'Değerlendirmeyi Güncelle' : 'Gönder'}
+                </button>
+                {satisfaction?.mine && !satFlash && (
+                  <span className="text-[11px] text-slate-400">Bugünkü puanınız: {satisfaction.mine.score}/5</span>
+                )}
+              </div>
+              {satFlash && <p className="mt-2 text-[12px] text-emerald-600 font-medium">{satFlash}</p>}
+            </div>
+
+            {/* 2) Memnuniyet özeti */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Memnuniyet Özeti</h3>
+                  <p className="text-[11px] text-slate-500">{monthLabel} · yemekhane anketi</p>
+                </div>
+              </div>
+
+              {satisfaction && satisfaction.count > 0 ? (
+                <>
+                  <div className="mt-4 flex items-end gap-2">
+                    <span className="text-3xl font-extrabold text-slate-900">
+                      {Number(satisfaction.score_avg).toLocaleString('tr-TR', { maximumFractionDigits: 1 })}
+                    </span>
+                    <span className="text-sm text-slate-400 mb-1">/ 5</span>
+                    <span className="ml-auto text-xs text-slate-500 mb-1">{satisfaction.count} değerlendirme</span>
+                  </div>
+
+                  {satisfaction.distribution && (
+                    <div className="mt-3 space-y-1.5">
+                      {[5, 4, 3, 2, 1].map((s) => {
+                        const c = satisfaction.distribution![String(s)] || 0;
+                        const pct = satisfaction.count > 0 ? Math.round((c / satisfaction.count) * 100) : 0;
+                        return (
+                          <div key={s} className="flex items-center gap-2 text-[11px] text-slate-500">
+                            <span className="w-6 text-right">{s}★</span>
+                            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  s >= 4 ? 'bg-emerald-400' : s === 3 ? 'bg-amber-400' : 'bg-rose-400'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="w-8">{c}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {satisfaction.recent && satisfaction.recent.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
+                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Son Yorumlar</p>
+                      {satisfaction.recent.slice(0, 3).map((r, i) => (
+                        <div key={i} className="text-xs text-slate-600">
+                          <span className="font-semibold text-amber-500">{r.score}★</span>{' '}
+                          <span className="italic">
+                            "{r.comment.length > 90 ? r.comment.slice(0, 90) + '…' : r.comment}"
+                          </span>
+                          <span className="text-slate-400"> — {r.user_name || 'Çalışan'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="mt-6 text-center text-slate-400">
+                  <Star className="w-8 h-8 mx-auto mb-1.5 text-slate-200" />
+                  <p className="text-xs">Bu ay henüz değerlendirme yok.</p>
+                </div>
+              )}
+            </div>
+
+            {/* 3) Yemekhane talepleri */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                    <ClipboardList className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Yemekhane Talepleri</h3>
+                    <p className="text-[11px] text-slate-500">Şikayet ve talepler aynı akışta takip edilir</p>
+                  </div>
+                </div>
+                <Link
+                  href="/dashboard/requests/new"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Yeni Talep
+                </Link>
+              </div>
+
+              {yemekhaneRequests.length === 0 ? (
+                <div className="mt-6 text-center text-slate-400">
+                  <UtensilsCrossed className="w-8 h-8 mx-auto mb-1.5 text-slate-200" />
+                  <p className="text-xs">Yemekhane kategorisinde talep bulunmuyor.</p>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {yemekhaneRequests.map((r) => {
+                    const cfg = REQ_STATUS[r.status] || REQ_STATUS.yeni;
+                    return (
+                      <Link
+                        key={r.id}
+                        href={`/dashboard/requests/${r.id}`}
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/40 transition-colors group"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate group-hover:text-blue-700">
+                            {r.title}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {r.request_number || 'Talep'} · {new Date(r.created_at).toLocaleDateString('tr-TR')}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${cfg.classes}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                          {cfg.label}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                  <div className="pt-1 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400">Toplam {yemekhaneTotal} kayıt</span>
+                    <Link
+                      href="/dashboard/requests"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                    >
+                      Tüm Talepler <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -606,13 +1138,15 @@ export default function CafeteriaPage() {
               <h2 className="text-base font-bold text-slate-900">Yemek Tedarikçi Firmaları</h2>
               <p className="text-xs text-slate-500">Sözleşmeli catering ve yemek üretim firmaları</p>
             </div>
-            <button
-              onClick={() => setIsSupplierModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Tedarikçi Ekle
-            </button>
+            {canManageSuppliers && (
+              <button
+                onClick={() => setIsSupplierModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Tedarikçi Ekle
+              </button>
+            )}
           </div>
 
           {supplierError && (
@@ -829,6 +1363,78 @@ export default function CafeteriaPage() {
                     className="w-full text-sm px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Üretim & Maliyet (üretim/sevkiyat gerçekleştikten sonra doldurulur) */}
+              <div className="space-y-3 bg-amber-50/60 p-3.5 rounded-xl border border-amber-100">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Scale className="w-3.5 h-3.5 text-amber-500" />
+                  Üretim & Maliyet (Opsiyonel)
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Üretim (kg)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="Örn: 120"
+                      value={menuFormData.produced_kg}
+                      onChange={(e) => setMenuFormData({ ...menuFormData, produced_kg: e.target.value })}
+                      className="w-full text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Tüketim (kg)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="Örn: 105"
+                      value={menuFormData.consumed_kg}
+                      onChange={(e) => setMenuFormData({ ...menuFormData, consumed_kg: e.target.value })}
+                      className="w-full text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Fire / Zayiat (kg)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="Örn: 8"
+                      value={menuFormData.waste_kg}
+                      onChange={(e) => setMenuFormData({ ...menuFormData, waste_kg: e.target.value })}
+                      className="w-full text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-600 mb-1">Porsiyon Maliyeti (₺)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Örn: 45"
+                      value={menuFormData.unit_cost}
+                      onChange={(e) => setMenuFormData({ ...menuFormData, unit_cost: e.target.value })}
+                      className="w-full text-sm px-3 py-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                {(menuFormData.produced_kg.trim() || menuFormData.consumed_kg.trim() || menuFormData.waste_kg.trim()) && (
+                  <p className="text-[11px] text-slate-500">
+                    Kalan (stok) ≈ <span className="font-semibold text-slate-700">{fmtNum(modalKalan)} kg</span>
+                    {modalFireRatio != null && (
+                      <>
+                        {' '}
+                        · Fire oranı{' '}
+                        <span className={`font-semibold ${modalFireRatio > 10 ? 'text-rose-600' : 'text-slate-700'}`}>
+                          %{fmtNum(modalFireRatio)}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

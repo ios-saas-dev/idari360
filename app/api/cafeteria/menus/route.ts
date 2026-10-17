@@ -1,6 +1,14 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
+/* Opsiyonel sayısal alan: boş → null; geçersiz/negatif → hata */
+function parseOptionalNumber(value: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (value === null || value === undefined || value === '') return { ok: true, value: null };
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return { ok: false };
+  return { ok: true, value: Math.round(n * 100) / 100 };
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -25,7 +33,14 @@ export async function GET(request: NextRequest) {
     query = query.eq('facility_id', facility_id);
   }
   if (date) query = query.eq('menu_date', date);
-  if (month) query = query.like('menu_date', `${month}%`);
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    // menu_date DATE kolonudur; LIKE kullanılamaz → ay aralığı ile filtrele
+    const [y, m] = month.split('-').map((p) => parseInt(p, 10));
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    query = query
+      .gte('menu_date', `${month}-01`)
+      .lte('menu_date', `${month}-${String(lastDay).padStart(2, '0')}`);
+  }
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -46,6 +61,22 @@ export async function POST(request: NextRequest) {
   const { menu_date, meal_type, items, planned_count, actual_count, facility_id } = body;
   if (!menu_date || !meal_type || !items) return NextResponse.json({ error: 'Eksik alanlar' }, { status: 400 });
 
+  // Üretim / tüketim / fire / maliyet: opsiyonel, negatif olamaz
+  const numFields: Array<{ key: 'produced_kg' | 'consumed_kg' | 'waste_kg' | 'unit_cost'; label: string }> = [
+    { key: 'produced_kg', label: 'Üretim (kg)' },
+    { key: 'consumed_kg', label: 'Tüketim (kg)' },
+    { key: 'waste_kg', label: 'Fire (kg)' },
+    { key: 'unit_cost', label: 'Porsiyon maliyeti' },
+  ];
+  const numbers: Record<string, number | null> = {};
+  for (const f of numFields) {
+    const parsed = parseOptionalNumber(body[f.key]);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: `${f.label} sıfır veya pozitif bir sayı olmalıdır.` }, { status: 400 });
+    }
+    numbers[f.key] = parsed.value;
+  }
+
   const fid = facility_id || profile.facility_id;
   const { data, error } = await supabase.from('cafeteria_menus').upsert({
     company_id: profile.company_id,
@@ -55,6 +86,10 @@ export async function POST(request: NextRequest) {
     items,
     planned_count: planned_count || 0,
     actual_count: actual_count || 0,
+    produced_kg: numbers.produced_kg,
+    consumed_kg: numbers.consumed_kg,
+    waste_kg: numbers.waste_kg,
+    unit_cost: numbers.unit_cost,
     created_by: user.id,
   }, { onConflict: 'company_id,facility_id,menu_date,meal_type' }).select().single();
 
